@@ -2,8 +2,7 @@ package com.secondbrain.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.secondbrain.app.ai.AIConfig
-import com.secondbrain.app.ai.GeminiProvider
+import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.data.model.NoteEntity
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.util.PrefsManager
@@ -39,8 +38,8 @@ class QaViewModel(
     fun ask() {
         val q = _question.value.trim()
         if (q.isBlank()) return
-        val apiKey = prefs.getApiKey()
-        if (apiKey.isBlank()) {
+        val keys = prefs.getApiKeys()
+        if (keys.isEmpty()) {
             _state.value = QaState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
             return
         }
@@ -61,8 +60,8 @@ class QaViewModel(
                 QaSource(note.id, title)
             }
 
-            val provider = GeminiProvider(AIConfig(apiKey, model = prefs.getModel()))
-            provider.answerQuestion(q, context)
+            val service = AIService(keys, prefs.getModel(), PrefsManager.MODEL_OPTIONS, null)
+            service.answerQuestion(q, context)
                 .onSuccess { _state.value = QaState.Answer(it, sources) }
                 .onFailure { _state.value = QaState.Error(it.message ?: "Gagal menjawab") }
         }

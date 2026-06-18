@@ -1,7 +1,6 @@
 package com.secondbrain.app.util
 
-import com.secondbrain.app.ai.AIConfig
-import com.secondbrain.app.ai.GeminiProvider
+import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.data.repository.NoteRepository
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -13,23 +12,24 @@ import java.time.format.DateTimeFormatter
 object PendingProcessor {
 
     suspend fun processAll(repo: NoteRepository, prefs: PrefsManager) {
-        val apiKey = prefs.getApiKey()
-        if (apiKey.isBlank()) return
+        val keys = prefs.getApiKeys()
+        if (keys.isEmpty()) return
 
         val pending = repo.getPending()
         if (pending.isEmpty()) return
 
         DebugLog.log("Pending", "Memproses ${pending.size} catatan tertunda")
-        val provider = GeminiProvider(AIConfig(
-            apiKey = apiKey,
-            model = prefs.getModel(),
-            extractionPromptTemplate = prefs.getCustomPrompt().ifBlank { null }
-        ))
+        val service = AIService(
+            keys = keys,
+            preferredModel = prefs.getModel(),
+            modelPool = PrefsManager.MODEL_OPTIONS,
+            promptTemplate = prefs.getCustomPrompt().ifBlank { null }
+        )
         val offset = prefs.getReminderOffsetHours()
 
         for (note in pending) {
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            provider.extractMetadata(note.rawText, now)
+            service.extractMetadata(note.rawText, now)
                 .onSuccess { repo.updateMetadata(note.id, it, offset) }
                 .onFailure { DebugLog.log("Pending ✕", "id=${note.id}: ${it.message}") }
         }

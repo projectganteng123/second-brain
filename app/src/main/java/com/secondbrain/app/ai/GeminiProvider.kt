@@ -67,7 +67,10 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         if (status !in 200..299) {
             val errorBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
             DebugLog.log("AI ✕ http $status", errorBody.take(800))
-            throw RuntimeException(friendlyError(status, errorBody))
+            val isRate = status == 429
+            val isDaily = isRate && (errorBody.contains("PerDay", true) ||
+                errorBody.contains("limit: 0", true) || errorBody.contains("per day", true))
+            throw GeminiException(status, isRate, isDaily, friendlyError(status, errorBody))
         }
 
         val response = conn.inputStream.bufferedReader().readText()

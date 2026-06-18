@@ -13,3 +13,11 @@ data class AIConfig(
     /** Template ekstraksi kustom dari user. null = pakai PromptTemplates.DEFAULT_EXTRACTION */
     val extractionPromptTemplate: String? = null
 )
+
+/** Error Gemini bertipe agar orchestrator bisa memutuskan fallback. */
+class GeminiException(
+    val status: Int,
+    val isRateLimit: Boolean,
+    val isDailyLimit: Boolean,
+    message: String
+) : RuntimeException(message)

@@ -2,8 +2,7 @@ package com.secondbrain.app.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.secondbrain.app.ai.AIConfig
-import com.secondbrain.app.ai.GeminiProvider
+import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.util.PrefsManager
@@ -40,28 +39,51 @@ class InputViewModel(
     private val _selectedStatus = MutableStateFlow<NoteStatus?>(NoteStatus.BELUM_MULAI)
     val selectedStatus: StateFlow<NoteStatus?> = _selectedStatus.asStateFlow()
 
+    private val _useAlarm = MutableStateFlow(false)
+    val useAlarm: StateFlow<Boolean> = _useAlarm.asStateFlow()
+
+    // Apakah user sudah mengubah prioritas/status manual (agar rekomendasi AI tidak menimpa pilihan user)
+    private var userTouchedPrioritas = false
+    private var userTouchedStatus = false
+
     fun updateText(text: String) { _rawText.value = text }
-    fun setPrioritas(p: Priority?) { _selectedPrioritas.value = p }
-    fun setStatus(s: NoteStatus?) { _selectedStatus.value = s }
+    fun setPrioritas(p: Priority?) { _selectedPrioritas.value = p; userTouchedPrioritas = true }
+    fun setStatus(s: NoteStatus?) { _selectedStatus.value = s; userTouchedStatus = true }
+    fun setUseAlarm(v: Boolean) { _useAlarm.value = v }
+    fun appendText(extra: String) {
+        if (extra.isBlank()) return
+        val cur = _rawText.value
+        _rawText.value = if (cur.isBlank()) extra else "$cur $extra"
+    }
 
     fun processWithAI() {
         val text = _rawText.value.trim()
         if (text.isBlank()) return
-        val apiKey = prefs.getApiKey()
-        if (apiKey.isBlank()) {
+        val keys = prefs.getApiKeys()
+        if (keys.isEmpty()) {
             _uiState.value = InputUiState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
             return
         }
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val provider = GeminiProvider(AIConfig(
-                apiKey = apiKey,
-                model = prefs.getModel(),
-                extractionPromptTemplate = prefs.getCustomPrompt().ifBlank { null }
-            ))
-            provider.extractMetadata(text, now)
-                .onSuccess { _uiState.value = InputUiState.Preview(it) }
+            val service = AIService(
+                keys = keys,
+                preferredModel = prefs.getModel(),
+                modelPool = PrefsManager.MODEL_OPTIONS,
+                promptTemplate = prefs.getCustomPrompt().ifBlank { null }
+            )
+            service.extractMetadata(text, now)
+                .onSuccess { meta ->
+                    // Pra-isi prioritas/status dari rekomendasi AI bila user belum memilih manual
+                    if (!userTouchedPrioritas) {
+                        Priority.fromString(meta.priority)?.let { _selectedPrioritas.value = it }
+                    }
+                    if (!userTouchedStatus) {
+                        NoteStatus.fromString(meta.status)?.let { _selectedStatus.value = it }
+                    }
+                    _uiState.value = InputUiState.Preview(meta)
+                }
                 .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }
         }
     }
@@ -75,7 +97,8 @@ class InputViewModel(
                     metadata = metadata,
                     prioritas = _selectedPrioritas.value,
                     status = _selectedStatus.value,
-                    offsetHours = prefs.getReminderOffsetHours()
+                    offsetHours = prefs.getReminderOffsetHours(),
+                    useAlarm = _useAlarm.value
                 )
             }.onSuccess { _uiState.value = InputUiState.Saved }
              .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal menyimpan") }
@@ -96,6 +119,9 @@ class InputViewModel(
         _rawText.value = ""
         _selectedPrioritas.value = null
         _selectedStatus.value = NoteStatus.BELUM_MULAI
+        _useAlarm.value = false
+        userTouchedPrioritas = false
+        userTouchedStatus = false
         _uiState.value = InputUiState.Idle
     }
 }
