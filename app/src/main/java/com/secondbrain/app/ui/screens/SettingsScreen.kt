@@ -10,9 +10,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.secondbrain.app.ai.PromptTemplates
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.util.PrefsManager
@@ -26,6 +30,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
     var apiKey by remember { mutableStateOf(prefs.getApiKey()) }
     var showKey by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
+
+    // Custom prompt: tampilkan default sebagai titik awal bila belum pernah diubah
+    var promptText by remember {
+        mutableStateOf(prefs.getCustomPrompt().ifBlank { PromptTemplates.DEFAULT_EXTRACTION })
+    }
+    var promptSaved by remember { mutableStateOf(false) }
+    var promptError by remember { mutableStateOf<String?>(null) }
 
     val bgColor = if (isDark) Lavender900 else Gray50
 
@@ -101,6 +112,88 @@ fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                     accent = !saved,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Custom prompt -----
+            GlassCard {
+                SectionLabel("prompt ekstraksi (lanjutan)", modifier = Modifier.padding(bottom = 8.dp))
+
+                // Peringatan
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isDark) Lemon600.copy(0.12f) else Lemon50,
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Outlined.Warning, null, modifier = Modifier.size(16.dp), tint = Lemon600)
+                    Text(
+                        "PERINGATAN: Mengubah prompt bisa membuat ekstraksi GAGAL jika AI tidak lagi " +
+                        "mengembalikan JSON dengan field yang dibutuhkan app. Wajib pertahankan placeholder " +
+                        "{now} dan {note}, serta struktur JSON-nya. Ubah hanya jika kamu paham.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDark) Lemon200 else Lemon800
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = promptText,
+                    onValueChange = { promptText = it; promptSaved = false; promptError = null },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp),
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Lavender400,
+                        unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
+                        focusedContainerColor = if (isDark) GlassDark else GlassLight,
+                        unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
+                        focusedTextColor = if (isDark) Lavender50 else Lavender800,
+                        unfocusedTextColor = if (isDark) Lavender50 else Lavender800
+                    )
+                )
+
+                promptError?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = Rose600)
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassButton(
+                        text = if (promptSaved) "Tersimpan" else "Simpan prompt",
+                        icon = if (promptSaved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
+                        onClick = {
+                            when {
+                                !promptText.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
+                                    promptError = "Prompt harus memuat placeholder {note} (teks catatan)."
+                                !promptText.contains(PromptTemplates.PLACEHOLDER_NOW) ->
+                                    promptError = "Prompt harus memuat placeholder {now} (waktu sekarang)."
+                                else -> {
+                                    prefs.saveCustomPrompt(promptText.trim())
+                                    promptSaved = true
+                                    promptError = null
+                                }
+                            }
+                        },
+                        accent = !promptSaved,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "Reset",
+                        icon = Icons.Outlined.RestartAlt,
+                        onClick = {
+                            prefs.clearCustomPrompt()
+                            promptText = PromptTemplates.DEFAULT_EXTRACTION
+                            promptSaved = false
+                        }
+                    )
+                }
             }
 
             Spacer(Modifier.height(12.dp))

@@ -9,5 +9,7 @@ interface AIProvider {
 
 data class AIConfig(
     val apiKey: String,
-    val model: String = "gemini-2.5-flash"
+    val model: String = "gemini-2.5-flash",
+    /** Template ekstraksi kustom dari user. null = pakai PromptTemplates.DEFAULT_EXTRACTION */
+    val extractionPromptTemplate: String? = null
 )

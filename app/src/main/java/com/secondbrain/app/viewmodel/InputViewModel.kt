@@ -24,7 +24,8 @@ sealed class InputUiState {
 
 class InputViewModel(
     private val repo: NoteRepository,
-    private val apiKeyProvider: () -> String
+    private val apiKeyProvider: () -> String,
+    private val promptProvider: () -> String? = { null }
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InputUiState>(InputUiState.Idle)
@@ -54,7 +55,7 @@ class InputViewModel(
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val provider = GeminiProvider(AIConfig(apiKey))
+            val provider = GeminiProvider(AIConfig(apiKey, extractionPromptTemplate = promptProvider()))
             provider.extractMetadata(text, now)
                 .onSuccess { _uiState.value = InputUiState.Preview(it) }
                 .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }

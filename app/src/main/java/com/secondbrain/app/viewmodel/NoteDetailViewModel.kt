@@ -24,7 +24,8 @@ data class NoteDetailState(
 
 class NoteDetailViewModel(
     private val repo: NoteRepository,
-    private val apiKeyProvider: () -> String
+    private val apiKeyProvider: () -> String,
+    private val promptProvider: () -> String? = { null }
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(NoteDetailState())
@@ -87,7 +88,7 @@ class NoteDetailViewModel(
         viewModelScope.launch {
             _state.value = _state.value.copy(reExtracting = true, message = null)
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val provider = GeminiProvider(AIConfig(apiKey))
+            val provider = GeminiProvider(AIConfig(apiKey, extractionPromptTemplate = promptProvider()))
             provider.extractMetadata(newRawText, now)
                 .onSuccess { meta ->
                     repo.update(note.copy(

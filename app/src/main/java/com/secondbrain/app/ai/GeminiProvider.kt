@@ -178,40 +178,11 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         }
     }
 
-    private fun buildExtractionPrompt(rawText: String, currentDateTime: String): String = """
-Kamu adalah asisten ekstraksi metadata dari catatan kerja dalam Bahasa Indonesia.
-
-Waktu sekarang: $currentDateTime
-
-Ekstrak metadata dari catatan berikut dan kembalikan HANYA JSON valid tanpa penjelasan apapun.
-
-Catatan:
-"$rawText"
-
-Kembalikan JSON dengan struktur berikut (isi yang relevan saja, kosongkan yang tidak ada):
-{
-  "title": "judul singkat kegiatan",
-  "type": "meeting|task|reminder|event|note|idea|personal",
-  "startTime": "HH:mm atau null",
-  "endTime": "HH:mm atau null",
-  "locations": [{"type": "location|platform", "value": "nama tempat"}],
-  "entities": {
-    "people": ["nama orang"],
-    "organizations": ["nama organisasi/perusahaan"]
-  },
-  "keywords": ["kata kunci penting"],
-  "recurrenceDates": ["YYYY-MM-DD"],
-  "actions": [{"action": "deskripsi aksi", "owner": "nama atau null", "deadline": "YYYY-MM-DD atau null"}],
-  "summary": "ringkasan 1-3 kalimat"
-}
-
-Aturan:
-- Semua tanggal relatif (besok, minggu depan, dll) harus dikonversi ke tanggal absolut berdasarkan waktu sekarang
-- recurrenceDates maksimal 90 hari ke depan
-- Untuk kegiatan berulang, generate semua tanggal dalam rentang tersebut
-- type harus salah satu dari: meeting, task, reminder, event, note, idea, personal
-- Kembalikan HANYA JSON, tidak ada teks lain
-""".trimIndent()
+    private fun buildExtractionPrompt(rawText: String, currentDateTime: String): String {
+        val template = config.extractionPromptTemplate?.takeIf { it.isNotBlank() }
+            ?: PromptTemplates.DEFAULT_EXTRACTION
+        return PromptTemplates.fill(template, currentDateTime, rawText)
+    }
 
     private fun buildQAPrompt(question: String, contextNotes: List<String>): String {
         val context = contextNotes.mapIndexed { i, n -> "[${i + 1}] $n" }.joinToString("\n\n")

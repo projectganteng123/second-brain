@@ -37,7 +37,9 @@ fun NavGraph(
     val gson = remember { Gson() }
     val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
-    val inputVm = remember { InputViewModel(repo) { prefs.getApiKey() } }
+    val inputVm = remember {
+        InputViewModel(repo, { prefs.getApiKey() }, { prefs.getCustomPrompt().ifBlank { null } })
+    }
 
     NavHost(navController, startDestination = Screen.Dashboard.route) {
 
@@ -122,7 +124,9 @@ fun NavGraph(
             arguments = listOf(navArgument("noteId") { type = NavType.LongType })
         ) { back ->
             val noteId = back.arguments?.getLong("noteId") ?: -1L
-            val detailVm = remember(noteId) { NoteDetailViewModel(repo) { prefs.getApiKey() } }
+            val detailVm = remember(noteId) {
+                NoteDetailViewModel(repo, { prefs.getApiKey() }, { prefs.getCustomPrompt().ifBlank { null } })
+            }
             NoteDetailScreen(
                 vm = detailVm,
                 noteId = noteId,
