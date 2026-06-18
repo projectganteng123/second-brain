@@ -2,7 +2,9 @@ package com.secondbrain.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,15 +37,19 @@ fun AllNotesScreen(
     val isDark = isSystemDark()
     val notes by repo.getAllActive().collectAsState(initial = emptyList())
     var filter by remember { mutableStateOf(NoteFilter.SEMUA) }
+    var typeFilter by remember { mutableStateOf<NoteType?>(null) }
 
-    val shown = remember(notes, filter) {
+    val shown = remember(notes, filter, typeFilter) {
         notes.filter { note ->
-            val hasDate = repo.metadataFrom(note)?.recurrenceDates?.isNotEmpty() == true
-            when (filter) {
+            val meta = repo.metadataFrom(note)
+            val hasDate = meta?.recurrenceDates?.isNotEmpty() == true
+            val dateOk = when (filter) {
                 NoteFilter.SEMUA -> true
                 NoteFilter.TERJADWAL -> hasDate
                 NoteFilter.TANPA_TANGGAL -> !hasDate
             }
+            val typeOk = typeFilter == null || meta?.type == typeFilter
+            dateOk && typeOk
         }
     }
 
@@ -96,6 +102,11 @@ fun AllNotesScreen(
             }
 
             Spacer(Modifier.height(8.dp))
+
+            // Filter jenis
+            TypeFilterRow(typeFilter, isDark) { typeFilter = it }
+
+            Spacer(Modifier.height(8.dp))
             SectionLabel("${shown.size} catatan")
 
             if (shown.isEmpty()) {
@@ -124,5 +135,39 @@ fun AllNotesScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TypeFilterRow(selected: NoteType?, isDark: Boolean, onSelect: (NoteType?) -> Unit) {
+    Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Chip("Semua", selected == null, isDark) { onSelect(null) }
+        NoteType.entries.forEach { t ->
+            Chip(t.label, selected == t, isDark) { onSelect(if (selected == t) null else t) }
+        }
+    }
+}
+
+@Composable
+private fun Chip(label: String, sel: Boolean, isDark: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (sel) (if (isDark) Lavender600.copy(0.4f) else Lavender100)
+                else (if (isDark) GlassDark else GlassLight)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (sel) (if (isDark) Lavender200 else Lavender600)
+                    else (if (isDark) Lavender400 else Gray600)
+        )
     }
 }
