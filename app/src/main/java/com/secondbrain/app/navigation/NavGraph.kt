@@ -29,6 +29,8 @@ fun NavGraph(
 ) {
     val gson = remember { Gson() }
     val dashboardVm = remember { DashboardViewModel(repo) }
+    // Shared across Input -> Preview so rawText & manual fields survive navigation
+    val inputVm = remember { InputViewModel(repo, prefs.getApiKey()) }
 
     NavHost(navController, startDestination = Screen.Dashboard.route) {
 
@@ -43,8 +45,6 @@ fun NavGraph(
         }
 
         composable(Screen.Input.route) {
-            val apiKey = prefs.getApiKey()
-            val inputVm = remember { InputViewModel(repo, apiKey) }
             val uiState by inputVm.uiState.collectAsState()
 
             LaunchedEffect(uiState) {
@@ -70,11 +70,6 @@ fun NavGraph(
             val decoded = java.net.URLDecoder.decode(encoded, "UTF-8")
             val metadata = runCatching { gson.fromJson(decoded, Metadata::class.java) }
                 .getOrDefault(Metadata())
-
-            val entry = remember(back) { navController.getBackStackEntry(Screen.Input.route) }
-            val inputVm = remember(entry) {
-                InputViewModel(repo, prefs.getApiKey())
-            }
 
             PreviewScreen(
                 vm = inputVm,
