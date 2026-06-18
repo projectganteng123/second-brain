@@ -39,10 +39,12 @@ Kembalikan JSON dengan struktur berikut (isi yang relevan, kosongkan array/null 
 }
 
 Aturan WAJIB:
-- "recurrenceDates" TIDAK BOLEH kosong. Selalu isi minimal satu tanggal:
-  * Jika ada tanggal eksplisit atau relatif (hari ini, besok, lusa, Senin depan, dll), konversi ke tanggal absolut berdasarkan waktu sekarang.
-  * Jika kegiatan berulang (setiap hari/minggu/bulan), buat daftar tanggalnya, maksimal 90 hari ke depan.
-  * Jika catatan TIDAK menyebut waktu sama sekali, gunakan tanggal hari ini (dari waktu sekarang).
+- Pengisian "recurrenceDates" tergantung "type":
+  * Untuk type TERJADWAL (meeting, task, event, reminder): WAJIB diisi minimal satu tanggal.
+      - Jika ada tanggal eksplisit/relatif (hari ini, besok, lusa, Senin depan, dll), konversi ke tanggal absolut berdasarkan waktu sekarang.
+      - Jika berulang (setiap hari/minggu/bulan), buat daftar tanggalnya, maksimal 90 hari ke depan.
+      - Jika TIDAK menyebut tanggal sama sekali, gunakan tanggal hari ini (dari waktu sekarang).
+  * Untuk type TIDAK TERJADWAL (note, idea, personal): isi "recurrenceDates" HANYA jika catatan benar-benar menyebut tanggal/waktu. Jika tidak ada, biarkan array kosong [].
 - Untuk waktu yang disebut samar tanpa jam pasti, petakan ke "startTime" berikut sebisanya:
   * "pagi"   -> 08:00
   * "siang"  -> 12:00
