@@ -9,8 +9,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.data.model.*
+import com.secondbrain.app.notification.ReminderWorker
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.viewmodel.InputUiState
@@ -29,9 +31,11 @@ fun PreviewScreen(
     val selectedStatus by vm.selectedStatus.collectAsState()
 
     var editedMetadata by remember { mutableStateOf(metadata) }
+    val context = LocalContext.current
 
     LaunchedEffect(uiState) {
         if (uiState is InputUiState.Saved) {
+            ReminderWorker.enqueueNow(context)
             onSaved()
             vm.reset()
         }

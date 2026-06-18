@@ -10,6 +10,8 @@ import com.secondbrain.app.ui.screens.*
 import com.secondbrain.app.util.PrefsManager
 import com.secondbrain.app.viewmodel.DashboardViewModel
 import com.secondbrain.app.viewmodel.InputViewModel
+import com.secondbrain.app.viewmodel.NoteDetailViewModel
+import com.secondbrain.app.viewmodel.QaViewModel
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
@@ -19,6 +21,10 @@ sealed class Screen(val route: String) {
     }
     object Settings  : Screen("settings")
     object Search    : Screen("search")
+    object Qa        : Screen("qa")
+    object Detail    : Screen("detail/{noteId}") {
+        fun go(noteId: Long) = "detail/$noteId"
+    }
 }
 
 @Composable
@@ -30,7 +36,7 @@ fun NavGraph(
     val gson = remember { Gson() }
     val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
-    val inputVm = remember { InputViewModel(repo, prefs.getApiKey()) }
+    val inputVm = remember { InputViewModel(repo) { prefs.getApiKey() } }
 
     NavHost(navController, startDestination = Screen.Dashboard.route) {
 
@@ -39,8 +45,10 @@ fun NavGraph(
                 vm = dashboardVm,
                 repo = repo,
                 onAddNote = { navController.navigate(Screen.Input.route) },
-                onNoteClick = { /* TODO: detail screen */ },
-                onSearchClick = { navController.navigate(Screen.Search.route) }
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) },
+                onSearchClick = { navController.navigate(Screen.Search.route) },
+                onAskClick = { navController.navigate(Screen.Qa.route) },
+                onSettingsClick = { navController.navigate(Screen.Settings.route) }
             )
         }
 
@@ -87,7 +95,31 @@ fun NavGraph(
             SearchScreen(
                 repo = repo,
                 onBack = { navController.popBackStack() },
-                onNoteClick = { /* TODO */ }
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.Qa.route) {
+            val qaVm = remember { QaViewModel(repo) { prefs.getApiKey() } }
+            QaScreen(
+                vm = qaVm,
+                onBack = { navController.popBackStack() },
+                onSourceClick = { id -> navController.navigate(Screen.Detail.go(id)) },
+                onOpenSettings = { navController.navigate(Screen.Settings.route) }
+            )
+        }
+
+        composable(
+            route = Screen.Detail.route,
+            arguments = listOf(navArgument("noteId") { type = NavType.LongType })
+        ) { back ->
+            val noteId = back.arguments?.getLong("noteId") ?: -1L
+            val detailVm = remember(noteId) { NoteDetailViewModel(repo) { prefs.getApiKey() } }
+            NoteDetailScreen(
+                vm = detailVm,
+                noteId = noteId,
+                onBack = { navController.popBackStack() },
+                onDeleted = { navController.popBackStack(Screen.Dashboard.route, false) }
             )
         }
     }

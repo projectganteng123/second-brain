@@ -89,6 +89,71 @@ class NoteRepository(
         })
     }
 
+    /**
+     * Local retrieval for Q&A: skor tiap catatan berdasarkan kecocokan kata kunci/entitas
+     * dan relevansi waktu relatif (hari ini, besok, minggu ini). Mengembalikan top [limit]
+     * catatan dengan skor > 0.
+     */
+    fun retrieveRelevant(question: String, allNotes: List<NoteEntity>, limit: Int = 6): List<NoteEntity> {
+        val q = question.lowercase()
+        val tokens = q.split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
+        val today = LocalDate.now()
+
+        val dateRange: Pair<LocalDate, LocalDate>? = when {
+            q.contains("hari ini")   -> today to today
+            q.contains("besok")      -> today.plusDays(1) to today.plusDays(1)
+            q.contains("lusa")       -> today.plusDays(2) to today.plusDays(2)
+            q.contains("minggu ini") -> today to today.plusDays(6)
+            q.contains("minggu depan") -> today.plusDays(7) to today.plusDays(13)
+            q.contains("bulan ini")  -> today to today.plusDays(30)
+            else -> null
+        }
+
+        val scored = allNotes.mapNotNull { note ->
+            val meta = metadataFrom(note)
+            var score = 0
+            val haystack = buildString {
+                append(note.rawText.lowercase()); append(' ')
+                meta?.let {
+                    append(it.title.lowercase()); append(' ')
+                    append(it.summary.lowercase()); append(' ')
+                    append(it.keywords.joinToString(" ").lowercase()); append(' ')
+                    append(it.entities.people.joinToString(" ").lowercase()); append(' ')
+                    append(it.entities.organizations.joinToString(" ").lowercase())
+                }
+            }
+            tokens.forEach { if (haystack.contains(it)) score += 2 }
+
+            if (dateRange != null && meta != null) {
+                val (from, to) = dateRange
+                val matchesDate = meta.recurrenceDates.any { ds ->
+                    runCatching {
+                        val d = LocalDate.parse(ds, DateTimeFormatter.ISO_LOCAL_DATE)
+                        !d.isBefore(from) && !d.isAfter(to)
+                    }.getOrDefault(false)
+                }
+                if (matchesDate) score += 5
+            }
+
+            if (score > 0) note to score else null
+        }
+
+        return scored.sortedByDescending { it.second }.take(limit).map { it.first }
+    }
+
+    fun contextStringFor(note: NoteEntity): String {
+        val meta = metadataFrom(note)
+        return buildString {
+            meta?.let {
+                if (it.title.isNotBlank()) append("Judul: ${it.title}. ")
+                if (it.recurrenceDates.isNotEmpty()) append("Tanggal: ${it.recurrenceDates.joinToString(", ")}. ")
+                if (it.startTime != null) append("Jam: ${it.startTime}. ")
+                if (it.summary.isNotBlank()) append("Ringkasan: ${it.summary}. ")
+            }
+            append("Catatan: ${note.rawText}")
+        }
+    }
+
     private suspend fun generateReminders(noteId: Long, metadata: Metadata) {
         val reminders = mutableListOf<ReminderEntity>()
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE

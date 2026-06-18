@@ -24,7 +24,7 @@ sealed class InputUiState {
 
 class InputViewModel(
     private val repo: NoteRepository,
-    private val apiKey: String
+    private val apiKeyProvider: () -> String
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InputUiState>(InputUiState.Idle)
@@ -46,6 +46,11 @@ class InputViewModel(
     fun processWithAI() {
         val text = _rawText.value.trim()
         if (text.isBlank()) return
+        val apiKey = apiKeyProvider()
+        if (apiKey.isBlank()) {
+            _uiState.value = InputUiState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
+            return
+        }
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
