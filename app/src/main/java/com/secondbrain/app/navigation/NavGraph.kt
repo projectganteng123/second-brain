@@ -24,6 +24,8 @@ sealed class Screen(val route: String) {
     object Qa        : Screen("qa")
     object Debug     : Screen("debug")
     object AllNotes  : Screen("allnotes")
+    object Archive   : Screen("archive")
+    object ActionItems : Screen("actionitems")
     object Detail    : Screen("detail/{noteId}") {
         fun go(noteId: Long) = "detail/$noteId"
     }
@@ -100,13 +102,32 @@ fun NavGraph(
 
         composable(Screen.Settings.route) {
             SettingsScreen(
+                repo = repo,
                 onBack = { navController.popBackStack() },
-                onOpenDebug = { navController.navigate(Screen.Debug.route) }
+                onOpenDebug = { navController.navigate(Screen.Debug.route) },
+                onOpenArchive = { navController.navigate(Screen.Archive.route) },
+                onOpenActionItems = { navController.navigate(Screen.ActionItems.route) }
             )
         }
 
         composable(Screen.Debug.route) {
             DebugScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.Archive.route) {
+            ArchiveScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.ActionItems.route) {
+            ActionItemsScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
         }
 
         composable(Screen.Search.route) {

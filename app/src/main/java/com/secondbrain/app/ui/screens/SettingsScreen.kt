@@ -6,30 +6,71 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.ai.PromptTemplates
+import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.util.PrefsManager
+import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
+fun SettingsScreen(
+    repo: NoteRepository,
+    onBack: () -> Unit,
+    onOpenDebug: () -> Unit = {},
+    onOpenArchive: () -> Unit = {},
+    onOpenActionItems: () -> Unit = {}
+) {
     val isDark = isSystemDark()
     val context = LocalContext.current
     val prefs = remember { PrefsManager(context) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
 
     var apiKey by remember { mutableStateOf(prefs.getApiKey()) }
     var showKey by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
+
+    var selectedModel by remember { mutableStateOf(prefs.getModel()) }
+    var offsetHours by remember { mutableIntStateOf(prefs.getReminderOffsetHours()) }
+
+    // Export launchers
+    val exportJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val data = repo.exportJson()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray()) }
+            }.onSuccess { snackbar.showSnackbar("Berhasil ekspor JSON") }
+             .onFailure { snackbar.showSnackbar("Gagal ekspor: ${it.message}") }
+        }
+    }
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val data = repo.exportCsv()
+                context.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray()) }
+            }.onSuccess { snackbar.showSnackbar("Berhasil ekspor CSV") }
+             .onFailure { snackbar.showSnackbar("Gagal ekspor: ${it.message}") }
+        }
+    }
 
     // Custom prompt: tampilkan default sebagai titik awal bila belum pernah diubah
     var promptText by remember {
@@ -40,7 +81,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
 
     val bgColor = if (isDark) Lavender900 else Gray50
 
-    Scaffold(containerColor = bgColor) { padding ->
+    Scaffold(
+        containerColor = bgColor,
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -112,6 +156,89 @@ fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                     accent = !saved,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Model AI -----
+            GlassCard {
+                SectionLabel("model AI", modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Pilih model Gemini. Jika satu model kena limit/dihapus dari free tier, ganti ke yang lain.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowChips(
+                    options = PrefsManager.MODEL_OPTIONS,
+                    selected = selectedModel,
+                    isDark = isDark,
+                    onSelect = {
+                        selectedModel = it
+                        prefs.saveModel(it)
+                        scope.launch { snackbar.showSnackbar("Model: $it") }
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Offset reminder -----
+            GlassCard {
+                SectionLabel("pengingat", modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Ingatkan saya berapa jam sebelum kegiatan dimulai (juga ada pengingat saat kegiatan mulai).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowChips(
+                    options = PrefsManager.REMINDER_OFFSET_OPTIONS.map { "$it jam" },
+                    selected = "$offsetHours jam",
+                    isDark = isDark,
+                    onSelect = { label ->
+                        val h = label.substringBefore(" ").toIntOrNull() ?: 24
+                        offsetHours = h
+                        prefs.saveReminderOffsetHours(h)
+                        scope.launch { snackbar.showSnackbar("Pengingat $h jam sebelum") }
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Export -----
+            GlassCard {
+                SectionLabel("ekspor data", modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Cadangkan semua catatan ke file. JSON paling lengkap; CSV mudah dibuka di spreadsheet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassButton(
+                        text = "Ekspor JSON",
+                        icon = Icons.Outlined.Code,
+                        onClick = { exportJsonLauncher.launch("secondbrain-backup.json") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(
+                        text = "Ekspor CSV",
+                        icon = Icons.Outlined.TableChart,
+                        onClick = { exportCsvLauncher.launch("secondbrain-export.csv") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Navigasi -----
+            GlassCard {
+                SectionLabel("lainnya", modifier = Modifier.padding(bottom = 8.dp))
+                NavRow(Icons.Outlined.Checklist, "Semua action items", isDark, onOpenActionItems)
+                NavRow(Icons.Outlined.Archive, "Arsip", isDark, onOpenArchive)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -216,5 +343,62 @@ fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
 
             Spacer(Modifier.height(40.dp))
         }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun FlowChips(
+    options: List<String>,
+    selected: String,
+    isDark: Boolean,
+    onSelect: (String) -> Unit
+) {
+    androidx.compose.foundation.layout.FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        options.forEach { opt ->
+            val sel = opt == selected
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (sel) (if (isDark) Lavender600.copy(0.4f) else Lavender100)
+                        else (if (isDark) GlassDark else GlassLight)
+                    )
+                    .clickable { onSelect(opt) }
+                    .padding(horizontal = 12.dp, vertical = 7.dp)
+            ) {
+                Text(
+                    opt,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (sel) (if (isDark) Lavender200 else Lavender600)
+                            else (if (isDark) Lavender400 else Gray600)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    isDark: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(icon, null, modifier = Modifier.size(18.dp), tint = if (isDark) Lavender200 else Lavender600)
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (isDark) Lavender50 else Lavender800,
+            modifier = Modifier.weight(1f))
+        Icon(Icons.Outlined.ChevronRight, null, modifier = Modifier.size(18.dp), tint = if (isDark) Lavender400 else Gray400)
     }
 }

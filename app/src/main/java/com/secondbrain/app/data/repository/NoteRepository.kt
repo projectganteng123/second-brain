@@ -69,6 +69,48 @@ class NoteRepository(
     suspend fun setArchived(id: Long, archived: Boolean) = noteDao.setArchived(id, archived)
     suspend fun setStatus(id: Long, status: NoteStatus?) = noteDao.setStatus(id, status?.name)
     suspend fun setPrioritas(id: Long, p: Priority?) = noteDao.setPrioritas(id, p?.name)
+    suspend fun getPending(): List<NoteEntity> = noteDao.getPendingExtraction()
+
+    suspend fun exportJson(): String {
+        val notes = noteDao.getAllOnce()
+        return gson.toJson(notes)
+    }
+
+    suspend fun exportCsv(): String {
+        val notes = noteDao.getAllOnce()
+        val sb = StringBuilder()
+        sb.append("id,createdAt,title,type,startTime,recurrenceDates,prioritas,status,rawText\n")
+        for (n in notes) {
+            val m = metadataFrom(n)
+            fun esc(s: String?): String = "\"" + (s ?: "").replace("\"", "\"\"").replace("\n", " ") + "\""
+            sb.append(n.id).append(',')
+                .append(esc(java.time.Instant.ofEpochMilli(n.createdAt).toString())).append(',')
+                .append(esc(m?.title)).append(',')
+                .append(esc(m?.type?.name)).append(',')
+                .append(esc(m?.startTime)).append(',')
+                .append(esc(m?.recurrenceDates?.joinToString("; "))).append(',')
+                .append(esc(n.prioritas)).append(',')
+                .append(esc(n.status)).append(',')
+                .append(esc(n.rawText)).append('\n')
+        }
+        return sb.toString()
+    }
+
+    /** Semua action items lintas catatan aktif, untuk layar agregasi. */
+    fun allActionItems(allNotes: List<NoteEntity>): List<ActionItemRef> =
+        allNotes.flatMap { note ->
+            val meta = metadataFrom(note)
+            meta?.actions.orEmpty().map { act ->
+                ActionItemRef(
+                    noteId = note.id,
+                    noteTitle = meta?.title?.ifBlank { note.rawText.take(40) } ?: note.rawText.take(40),
+                    action = act.action,
+                    owner = act.owner,
+                    deadline = act.deadline,
+                    done = note.status == NoteStatus.SELESAI.name
+                )
+            }
+        }
 
     fun metadataFrom(note: NoteEntity): Metadata? =
         runCatching { gson.fromJson(note.metadataJson, Metadata::class.java) }.getOrNull()

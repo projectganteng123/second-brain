@@ -37,6 +37,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE isPendingExtraction = 1")
     suspend fun getPendingExtraction(): List<NoteEntity>
 
+    @Query("SELECT * FROM notes ORDER BY createdAt DESC")
+    suspend fun getAllOnce(): List<NoteEntity>
+
     @Query("UPDATE notes SET isArchived = :archived, updatedAt = :now WHERE id = :id")
     suspend fun setArchived(id: Long, archived: Boolean, now: Long = System.currentTimeMillis())
 

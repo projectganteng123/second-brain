@@ -39,6 +39,16 @@ data class ActionItem(
     val deadline: String? = null
 )
 
+/** Action item beserta acuan ke catatan induknya (untuk layar agregasi). */
+data class ActionItemRef(
+    val noteId: Long,
+    val noteTitle: String,
+    val action: String,
+    val owner: String?,
+    val deadline: String?,
+    val done: Boolean
+)
+
 enum class Priority(val label: String) {
     PENTING_URGEN("Penting & Urgen"),
     PENTING_TIDAK_URGEN("Penting, Tidak Urgen"),
