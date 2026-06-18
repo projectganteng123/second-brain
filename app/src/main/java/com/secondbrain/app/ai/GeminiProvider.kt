@@ -50,15 +50,56 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
 
         OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
+        val status = conn.responseCode
+        if (status !in 200..299) {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+            throw RuntimeException(friendlyError(status, errorBody))
+        }
+
         val response = conn.inputStream.bufferedReader().readText()
         val json = JsonParser.parseString(response).asJsonObject
-        return json
-            .getAsJsonArray("candidates")
+
+        // Bisa diblokir safety filter -> tidak ada candidates
+        val candidates = json.getAsJsonArray("candidates")
+        if (candidates == null || candidates.size() == 0) {
+            val block = runCatching {
+                json.getAsJsonObject("promptFeedback").get("blockReason").asString
+            }.getOrNull()
+            throw RuntimeException(
+                if (block != null) "Permintaan diblokir Gemini (alasan: $block). Coba ubah teks catatan."
+                else "Gemini tidak mengembalikan jawaban. Coba lagi."
+            )
+        }
+
+        return candidates
             .get(0).asJsonObject
             .getAsJsonObject("content")
             .getAsJsonArray("parts")
             .get(0).asJsonObject
             .get("text").asString
+    }
+
+    private fun friendlyError(status: Int, body: String): String {
+        // Ambil pesan asli dari struktur { "error": { "message": "...", "status": "..." } }
+        val apiMessage = runCatching {
+            JsonParser.parseString(body).asJsonObject
+                .getAsJsonObject("error").get("message").asString
+        }.getOrNull()
+
+        return when (status) {
+            400 -> if (apiMessage?.contains("API key not valid", true) == true || apiMessage?.contains("API_KEY_INVALID", true) == true)
+                "API key tidak valid. Pastikan kamu menyalin key dengan benar di Pengaturan."
+            else "Permintaan ditolak (400): ${apiMessage ?: "format tidak sesuai"}"
+            403 -> if (apiMessage?.contains("SERVICE_DISABLED", true) == true ||
+                       apiMessage?.contains("has not been used", true) == true ||
+                       apiMessage?.contains("disabled", true) == true)
+                "Generative Language API belum aktif di project Google kamu. Buka console.developers.google.com → aktifkan \"Generative Language API\", lalu coba lagi. Atau buat API key baru di aistudio.google.com."
+            else "Akses ditolak (403): ${apiMessage ?: "periksa izin API key"}"
+            404 -> "Model AI tidak ditemukan (404). Mungkin nama model tidak tersedia untuk key kamu: ${apiMessage ?: ""}"
+            429 -> "Kuota gratis Gemini habis untuk sementara (429). Tunggu beberapa saat lalu coba lagi."
+            in 500..599 -> "Server Gemini sedang bermasalah ($status). Coba lagi nanti."
+            else -> "Gagal ($status): ${apiMessage ?: body.take(200)}"
+        }
     }
 
     private fun parseMetadata(raw: String): Metadata {
