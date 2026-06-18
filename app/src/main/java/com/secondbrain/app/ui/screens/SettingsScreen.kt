@@ -18,7 +18,7 @@ import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.util.PrefsManager
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
     val isDark = isSystemDark()
     val context = LocalContext.current
     val prefs = remember { PrefsManager(context) }
@@ -99,6 +99,24 @@ fun SettingsScreen(onBack: () -> Unit) {
                         saved = true
                     },
                     accent = !saved,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            GlassCard {
+                SectionLabel("pengembang", modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Lihat apa yang dikirim ke AI, respons baliknya, dan operasi simpan/cari di database.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(10.dp))
+                GlassButton(
+                    text = "Buka Debug Log",
+                    icon = Icons.Outlined.BugReport,
+                    onClick = onOpenDebug,
                     modifier = Modifier.fillMaxWidth()
                 )
             }

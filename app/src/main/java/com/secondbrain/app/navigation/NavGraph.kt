@@ -22,6 +22,7 @@ sealed class Screen(val route: String) {
     object Settings  : Screen("settings")
     object Search    : Screen("search")
     object Qa        : Screen("qa")
+    object Debug     : Screen("debug")
     object Detail    : Screen("detail/{noteId}") {
         fun go(noteId: Long) = "detail/$noteId"
     }
@@ -88,7 +89,14 @@ fun NavGraph(
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDebug = { navController.navigate(Screen.Debug.route) }
+            )
+        }
+
+        composable(Screen.Debug.route) {
+            DebugScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Screen.Search.route) {

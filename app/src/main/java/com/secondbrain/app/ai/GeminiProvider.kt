@@ -3,6 +3,7 @@ package com.secondbrain.app.ai
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import com.secondbrain.app.data.model.*
+import com.secondbrain.app.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
@@ -17,27 +18,39 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         withContext(Dispatchers.IO) {
             runCatching {
                 val prompt = buildExtractionPrompt(rawText, currentDateTime)
-                val responseText = callGemini(prompt)
+                DebugLog.log("AI → request", "model=${config.model}\n$prompt")
+                val responseText = callGemini(prompt, jsonOutput = true)
+                DebugLog.log("AI ← response", responseText)
                 parseMetadata(responseText)
-            }
+            }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
     override suspend fun answerQuestion(question: String, contextNotes: List<String>): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val prompt = buildQAPrompt(question, contextNotes)
-                callGemini(prompt)
-            }
+                DebugLog.log("AI → tanya", prompt)
+                val ans = callGemini(prompt, jsonOutput = false)
+                DebugLog.log("AI ← jawab", ans)
+                ans
+            }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    private fun callGemini(prompt: String): String {
+    private fun callGemini(prompt: String, jsonOutput: Boolean): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}"
         )
+        // thinkingBudget=0 mematikan "thinking" pada model 2.5 agar seluruh token output
+        // dipakai untuk jawaban (mencegah JSON terpotong). responseMimeType memaksa JSON murni.
+        val genConfig = buildString {
+            append("\"temperature\": 0.1, \"maxOutputTokens\": 8192")
+            append(", \"thinkingConfig\": {\"thinkingBudget\": 0}")
+            if (jsonOutput) append(", \"responseMimeType\": \"application/json\"")
+        }
         val body = """
             {
               "contents": [{"parts": [{"text": ${gson.toJson(prompt)}}]}],
-              "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1024}
+              "generationConfig": {$genConfig}
             }
         """.trimIndent()
 
@@ -46,13 +59,14 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         conn.setRequestProperty("Content-Type", "application/json")
         conn.doOutput = true
         conn.connectTimeout = 15000
-        conn.readTimeout = 30000
+        conn.readTimeout = 45000
 
         OutputStreamWriter(conn.outputStream).use { it.write(body) }
 
         val status = conn.responseCode
         if (status !in 200..299) {
             val errorBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
+            DebugLog.log("AI ✕ http $status", errorBody.take(800))
             throw RuntimeException(friendlyError(status, errorBody))
         }
 
@@ -71,12 +85,24 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             )
         }
 
-        return candidates
-            .get(0).asJsonObject
-            .getAsJsonObject("content")
-            .getAsJsonArray("parts")
-            .get(0).asJsonObject
-            .get("text").asString
+        val candidate = candidates.get(0).asJsonObject
+        val finishReason = runCatching { candidate.get("finishReason").asString }.getOrNull()
+
+        // Gabungkan SEMUA parts (model bisa membagi teks ke beberapa part)
+        val parts = candidate.getAsJsonObject("content")?.getAsJsonArray("parts")
+        val text = buildString {
+            parts?.forEach { p ->
+                runCatching { p.asJsonObject.get("text").asString }.getOrNull()?.let { append(it) }
+            }
+        }
+
+        if (text.isBlank()) {
+            throw RuntimeException("Respons AI kosong (finishReason=$finishReason).")
+        }
+        if (finishReason == "MAX_TOKENS") {
+            DebugLog.log("AI ⚠ MAX_TOKENS", "Output terpotong; pertimbangkan teks lebih singkat.")
+        }
+        return text
     }
 
     private fun friendlyError(status: Int, body: String): String {
@@ -131,12 +157,25 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
     }
 
     private fun parseMetadata(raw: String): Metadata {
-        val cleaned = raw
-            .trim()
+        var cleaned = raw.trim()
             .removePrefix("```json").removePrefix("```")
             .removeSuffix("```")
             .trim()
-        return gson.fromJson(cleaned, Metadata::class.java)
+        // Ambil hanya blok { ... } pertama bila ada teks tambahan di sekitarnya
+        val start = cleaned.indexOf('{')
+        val end = cleaned.lastIndexOf('}')
+        if (start >= 0 && end > start) cleaned = cleaned.substring(start, end + 1)
+
+        return try {
+            gson.fromJson(cleaned, Metadata::class.java)
+                ?: throw RuntimeException("JSON kosong")
+        } catch (e: Exception) {
+            DebugLog.log("AI ✕ parse gagal", "${e.message}\n--- JSON mentah ---\n$cleaned")
+            throw RuntimeException(
+                "AI mengembalikan format yang tidak lengkap/terpotong. Coba proses ulang, " +
+                "atau persingkat catatan. (lihat panel Debug untuk detail)"
+            )
+        }
     }
 
     private fun buildExtractionPrompt(rawText: String, currentDateTime: String): String = """

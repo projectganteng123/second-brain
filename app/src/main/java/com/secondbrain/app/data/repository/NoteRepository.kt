@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.secondbrain.app.data.database.NoteDao
 import com.secondbrain.app.data.database.ReminderDao
 import com.secondbrain.app.data.model.*
+import com.secondbrain.app.util.DebugLog
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -27,14 +28,16 @@ class NoteRepository(
         status: NoteStatus? = null,
         source: InputSource = InputSource.TEXT
     ): Long {
+        val metaJson = gson.toJson(metadata)
         val entity = NoteEntity(
             rawText = rawText,
-            metadataJson = gson.toJson(metadata),
+            metadataJson = metaJson,
             prioritas = prioritas?.name,
             status = status?.name,
             source = source.name.lowercase()
         )
         val id = noteDao.insert(entity)
+        DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}\nmetadata=$metaJson")
         generateReminders(id, metadata)
         return id
     }
@@ -71,9 +74,11 @@ class NoteRepository(
 
     fun getNotesForDate(date: LocalDate, allNotes: List<NoteEntity>): List<NoteEntity> {
         val dateStr = date.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        return allNotes.filter { note ->
+        val result = allNotes.filter { note ->
             metadataFrom(note)?.recurrenceDates?.contains(dateStr) == true
         }
+        DebugLog.log("DB ⌕ hari ini", "cari tanggal=$dateStr → ${result.size} dari ${allNotes.size} catatan aktif")
+        return result
     }
 
     fun getNotesForRange(from: LocalDate, to: LocalDate, allNotes: List<NoteEntity>): List<NoteEntity> {
@@ -138,7 +143,9 @@ class NoteRepository(
             if (score > 0) note to score else null
         }
 
-        return scored.sortedByDescending { it.second }.take(limit).map { it.first }
+        val result = scored.sortedByDescending { it.second }.take(limit).map { it.first }
+        DebugLog.log("RAG ⌕ retrieval", "tanya=\"$question\", token=$tokens, rentang=$dateRange → ${result.size} catatan terpilih (skor: ${scored.sortedByDescending { it.second }.take(limit).map { it.second }})")
+        return result
     }
 
     fun contextStringFor(note: NoteEntity): String {
