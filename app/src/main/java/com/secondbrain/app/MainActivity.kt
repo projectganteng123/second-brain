@@ -13,10 +13,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.secondbrain.app.navigation.NavGraph
 import com.secondbrain.app.ui.theme.SecondBrainTheme
+import com.secondbrain.app.util.PendingProcessor
 import com.secondbrain.app.util.PrefsManager
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -30,6 +33,12 @@ class MainActivity : ComponentActivity() {
 
         val app = application as SecondBrainApp
         val prefs = PrefsManager(this)
+        val openInput = intent?.getBooleanExtra(EXTRA_OPEN_INPUT, false) == true
+
+        // Proses catatan offline yang tertunda saat app dibuka
+        lifecycleScope.launch {
+            runCatching { PendingProcessor.processAll(app.repository, prefs) }
+        }
 
         setContent {
             SecondBrainTheme {
@@ -38,7 +47,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
-                    NavGraph(navController, app.repository, prefs)
+                    NavGraph(navController, app.repository, prefs, openInput)
                 }
             }
         }
@@ -52,5 +61,9 @@ class MainActivity : ComponentActivity() {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_OPEN_INPUT = "open_input"
     }
 }

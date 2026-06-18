@@ -35,12 +35,18 @@ sealed class Screen(val route: String) {
 fun NavGraph(
     navController: NavHostController,
     repo: NoteRepository,
-    prefs: PrefsManager
+    prefs: PrefsManager,
+    openInput: Boolean = false
 ) {
     val gson = remember { Gson() }
     val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
     val inputVm = remember { InputViewModel(repo, prefs) }
+
+    // Buka layar Input langsung bila dipicu dari widget quick-capture
+    LaunchedEffect(openInput) {
+        if (openInput) navController.navigate(Screen.Input.route)
+    }
 
     NavHost(navController, startDestination = Screen.Dashboard.route) {
 
