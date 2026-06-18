@@ -38,9 +38,7 @@ fun NavGraph(
     val gson = remember { Gson() }
     val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
-    val inputVm = remember {
-        InputViewModel(repo, { prefs.getApiKey() }, { prefs.getCustomPrompt().ifBlank { null } })
-    }
+    val inputVm = remember { InputViewModel(repo, prefs) }
 
     NavHost(navController, startDestination = Screen.Dashboard.route) {
 
@@ -120,7 +118,7 @@ fun NavGraph(
         }
 
         composable(Screen.Qa.route) {
-            val qaVm = remember { QaViewModel(repo) { prefs.getApiKey() } }
+            val qaVm = remember { QaViewModel(repo, prefs) }
             QaScreen(
                 vm = qaVm,
                 onBack = { navController.popBackStack() },
@@ -134,9 +132,7 @@ fun NavGraph(
             arguments = listOf(navArgument("noteId") { type = NavType.LongType })
         ) { back ->
             val noteId = back.arguments?.getLong("noteId") ?: -1L
-            val detailVm = remember(noteId) {
-                NoteDetailViewModel(repo, { prefs.getApiKey() }, { prefs.getCustomPrompt().ifBlank { null } })
-            }
+            val detailVm = remember(noteId) { NoteDetailViewModel(repo, prefs) }
             NoteDetailScreen(
                 vm = detailVm,
                 noteId = noteId,

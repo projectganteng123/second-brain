@@ -6,6 +6,7 @@ import com.secondbrain.app.ai.AIConfig
 import com.secondbrain.app.ai.GeminiProvider
 import com.secondbrain.app.data.model.NoteEntity
 import com.secondbrain.app.data.repository.NoteRepository
+import com.secondbrain.app.util.PrefsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +25,7 @@ sealed class QaState {
 
 class QaViewModel(
     private val repo: NoteRepository,
-    private val apiKeyProvider: () -> String
+    private val prefs: PrefsManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<QaState>(QaState.Idle)
@@ -38,7 +39,7 @@ class QaViewModel(
     fun ask() {
         val q = _question.value.trim()
         if (q.isBlank()) return
-        val apiKey = apiKeyProvider()
+        val apiKey = prefs.getApiKey()
         if (apiKey.isBlank()) {
             _state.value = QaState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
             return
@@ -60,7 +61,7 @@ class QaViewModel(
                 QaSource(note.id, title)
             }
 
-            val provider = GeminiProvider(AIConfig(apiKey))
+            val provider = GeminiProvider(AIConfig(apiKey, model = prefs.getModel()))
             provider.answerQuestion(q, context)
                 .onSuccess { _state.value = QaState.Answer(it, sources) }
                 .onFailure { _state.value = QaState.Error(it.message ?: "Gagal menjawab") }

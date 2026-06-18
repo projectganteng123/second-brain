@@ -17,9 +17,23 @@ class PrefsManager(context: Context) {
     fun getCustomPrompt(): String = prefs.getString(KEY_CUSTOM_PROMPT, "") ?: ""
     fun clearCustomPrompt() = prefs.edit { remove(KEY_CUSTOM_PROMPT) }
 
+    /** Model Gemini yang dipakai. */
+    fun saveModel(model: String) = prefs.edit { putString(KEY_MODEL, model) }
+    fun getModel(): String = prefs.getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL
+
     companion object {
         private const val KEY_API = "gemini_api_key"
         private const val KEY_REMINDER_OFFSET = "reminder_offset_hours"
         private const val KEY_CUSTOM_PROMPT = "custom_extraction_prompt"
+        private const val KEY_MODEL = "gemini_model"
+
+        const val DEFAULT_MODEL = "gemini-2.5-flash"
+        val MODEL_OPTIONS = listOf(
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-latest",
+            "gemini-2.5-pro"
+        )
+        val REMINDER_OFFSET_OPTIONS = listOf(1, 3, 12, 24, 48)
     }
 }

@@ -6,6 +6,7 @@ import com.secondbrain.app.ai.AIConfig
 import com.secondbrain.app.ai.GeminiProvider
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.data.repository.NoteRepository
+import com.secondbrain.app.util.PrefsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +25,7 @@ data class NoteDetailState(
 
 class NoteDetailViewModel(
     private val repo: NoteRepository,
-    private val apiKeyProvider: () -> String,
-    private val promptProvider: () -> String? = { null }
+    private val prefs: PrefsManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(NoteDetailState())
@@ -80,7 +80,7 @@ class NoteDetailViewModel(
 
     fun reExtract(newRawText: String) {
         val note = _state.value.note ?: return
-        val apiKey = apiKeyProvider()
+        val apiKey = prefs.getApiKey()
         if (apiKey.isBlank()) {
             _state.value = _state.value.copy(message = "API key Gemini belum diatur.")
             return
@@ -88,14 +88,18 @@ class NoteDetailViewModel(
         viewModelScope.launch {
             _state.value = _state.value.copy(reExtracting = true, message = null)
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val provider = GeminiProvider(AIConfig(apiKey, extractionPromptTemplate = promptProvider()))
+            val provider = GeminiProvider(AIConfig(
+                apiKey = apiKey,
+                model = prefs.getModel(),
+                extractionPromptTemplate = prefs.getCustomPrompt().ifBlank { null }
+            ))
             provider.extractMetadata(newRawText, now)
                 .onSuccess { meta ->
                     repo.update(note.copy(
                         rawText = newRawText,
                         updatedAt = System.currentTimeMillis()
                     ))
-                    repo.updateMetadata(note.id, meta)
+                    repo.updateMetadata(note.id, meta, prefs.getReminderOffsetHours())
                     val refreshed = repo.getById(note.id)
                     _state.value = _state.value.copy(
                         note = refreshed,

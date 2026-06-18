@@ -6,6 +6,7 @@ import com.secondbrain.app.ai.AIConfig
 import com.secondbrain.app.ai.GeminiProvider
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.data.repository.NoteRepository
+import com.secondbrain.app.util.PrefsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +25,7 @@ sealed class InputUiState {
 
 class InputViewModel(
     private val repo: NoteRepository,
-    private val apiKeyProvider: () -> String,
-    private val promptProvider: () -> String? = { null }
+    private val prefs: PrefsManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<InputUiState>(InputUiState.Idle)
@@ -47,7 +47,7 @@ class InputViewModel(
     fun processWithAI() {
         val text = _rawText.value.trim()
         if (text.isBlank()) return
-        val apiKey = apiKeyProvider()
+        val apiKey = prefs.getApiKey()
         if (apiKey.isBlank()) {
             _uiState.value = InputUiState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
             return
@@ -55,7 +55,11 @@ class InputViewModel(
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val provider = GeminiProvider(AIConfig(apiKey, extractionPromptTemplate = promptProvider()))
+            val provider = GeminiProvider(AIConfig(
+                apiKey = apiKey,
+                model = prefs.getModel(),
+                extractionPromptTemplate = prefs.getCustomPrompt().ifBlank { null }
+            ))
             provider.extractMetadata(text, now)
                 .onSuccess { _uiState.value = InputUiState.Preview(it) }
                 .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }
@@ -70,7 +74,8 @@ class InputViewModel(
                     rawText = _rawText.value.trim(),
                     metadata = metadata,
                     prioritas = _selectedPrioritas.value,
-                    status = _selectedStatus.value
+                    status = _selectedStatus.value,
+                    offsetHours = prefs.getReminderOffsetHours()
                 )
             }.onSuccess { _uiState.value = InputUiState.Saved }
              .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal menyimpan") }

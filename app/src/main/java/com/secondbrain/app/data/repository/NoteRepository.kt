@@ -26,7 +26,8 @@ class NoteRepository(
         metadata: Metadata,
         prioritas: Priority? = null,
         status: NoteStatus? = null,
-        source: InputSource = InputSource.TEXT
+        source: InputSource = InputSource.TEXT,
+        offsetHours: Int = 24
     ): Long {
         val metaJson = gson.toJson(metadata)
         val entity = NoteEntity(
@@ -38,7 +39,7 @@ class NoteRepository(
         )
         val id = noteDao.insert(entity)
         DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}\nmetadata=$metaJson")
-        generateReminders(id, metadata)
+        generateReminders(id, metadata, offsetHours)
         return id
     }
 
@@ -51,7 +52,7 @@ class NoteRepository(
         return noteDao.insert(entity)
     }
 
-    suspend fun updateMetadata(id: Long, metadata: Metadata) {
+    suspend fun updateMetadata(id: Long, metadata: Metadata, offsetHours: Int = 24) {
         val existing = noteDao.getById(id) ?: return
         noteDao.update(existing.copy(
             metadataJson = gson.toJson(metadata),
@@ -59,7 +60,7 @@ class NoteRepository(
             updatedAt = System.currentTimeMillis()
         ))
         reminderDao.deleteByNote(id)
-        generateReminders(id, metadata)
+        generateReminders(id, metadata, offsetHours)
     }
 
     suspend fun update(note: NoteEntity) = noteDao.update(note)
@@ -161,35 +162,45 @@ class NoteRepository(
         }
     }
 
-    private suspend fun generateReminders(noteId: Long, metadata: Metadata) {
+    private suspend fun generateReminders(noteId: Long, metadata: Metadata, offsetHours: Int) {
         val reminders = mutableListOf<ReminderEntity>()
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE
-        val now = LocalDate.now()
+        val nowMillis = System.currentTimeMillis()
 
         for (dateStr in metadata.recurrenceDates) {
             val date = runCatching { LocalDate.parse(dateStr, fmt) }.getOrNull() ?: continue
-            if (date.isBefore(now)) continue
 
             val eventTime = metadata.startTime?.let {
                 runCatching { LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull()
             } ?: LocalTime.of(8, 0)
 
-            val dayBefore = LocalDateTime.of(date.minusDays(1), LocalTime.of(8, 0))
-            reminders.add(ReminderEntity(
-                noteId = noteId,
-                remindAt = dayBefore.toEpochMilli(),
-                message = "Besok: ${metadata.title}"
-            ))
+            val eventDateTime = LocalDateTime.of(date, eventTime)
+            val eventMillis = eventDateTime.toEpochMilli()
 
-            val onTime = LocalDateTime.of(date, eventTime)
-            reminders.add(ReminderEntity(
-                noteId = noteId,
-                remindAt = onTime.toEpochMilli(),
-                message = metadata.title
-            ))
+            // Pengingat X jam sebelum kegiatan (sesuai pengaturan user)
+            val offsetMillis = eventMillis - offsetHours * 60L * 60L * 1000L
+            if (offsetMillis > nowMillis) {
+                reminders.add(ReminderEntity(
+                    noteId = noteId,
+                    remindAt = offsetMillis,
+                    message = "Dalam $offsetHours jam: ${metadata.title}"
+                ))
+            }
+
+            // Pengingat saat kegiatan dimulai
+            if (eventMillis > nowMillis) {
+                reminders.add(ReminderEntity(
+                    noteId = noteId,
+                    remindAt = eventMillis,
+                    message = metadata.title
+                ))
+            }
         }
 
-        if (reminders.isNotEmpty()) reminderDao.insertAll(reminders)
+        if (reminders.isNotEmpty()) {
+            reminderDao.insertAll(reminders)
+            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (offset=$offsetHours jam)")
+        }
     }
 
     private fun LocalDateTime.toEpochMilli(): Long =
