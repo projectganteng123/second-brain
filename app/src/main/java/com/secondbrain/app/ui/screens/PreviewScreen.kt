@@ -1,8 +1,12 @@
 package com.secondbrain.app.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -31,6 +35,7 @@ fun PreviewScreen(
     val selectedStatus by vm.selectedStatus.collectAsState()
 
     var editedMetadata by remember { mutableStateOf(metadata) }
+    var editing by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     LaunchedEffect(uiState) {
@@ -72,7 +77,22 @@ fun PreviewScreen(
 
             // Metadata card
             GlassCard {
-                SectionLabel("hasil ekstraksi AI", modifier = Modifier.padding(bottom = 8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SectionLabel("hasil ekstraksi AI")
+                    TextButton(onClick = { editing = !editing }) {
+                        Icon(
+                            if (editing) Icons.Outlined.Close else Icons.Outlined.Edit,
+                            null, modifier = Modifier.size(16.dp), tint = Lavender600
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (editing) "Tutup" else "Edit", color = Lavender600,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
 
                 MetadataRow("Judul", editedMetadata.title.ifBlank { "-" })
                 MetadataRow("Jenis", editedMetadata.type.label)
@@ -133,6 +153,16 @@ fun PreviewScreen(
                         fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                     )
                 }
+            }
+
+            // Editable card
+            if (editing) {
+                Spacer(Modifier.height(8.dp))
+                MetadataEditor(
+                    metadata = editedMetadata,
+                    isDark = isDark,
+                    onChange = { editedMetadata = it }
+                )
             }
 
             // Warning: no end time
@@ -238,5 +268,112 @@ private fun StatusSelector(selected: NoteStatus?, onSelect: (NoteStatus?) -> Uni
                 modifier = Modifier.weight(1f)
             )
         }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MetadataEditor(
+    metadata: Metadata,
+    isDark: Boolean,
+    onChange: (Metadata) -> Unit
+) {
+    // recurrenceDates sebagai teks dipisah koma
+    var datesText by remember(metadata.recurrenceDates) {
+        mutableStateOf(metadata.recurrenceDates.joinToString(", "))
+    }
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Lavender400,
+        unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
+        focusedContainerColor = if (isDark) GlassDark else GlassLight,
+        unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
+        focusedTextColor = if (isDark) Lavender50 else Lavender800,
+        unfocusedTextColor = if (isDark) Lavender50 else Lavender800
+    )
+
+    GlassCard {
+        SectionLabel("edit manual", modifier = Modifier.padding(bottom = 8.dp))
+
+        OutlinedTextField(
+            value = metadata.title,
+            onValueChange = { onChange(metadata.copy(title = it)) },
+            label = { Text("Judul") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            colors = fieldColors
+        )
+
+        Spacer(Modifier.height(8.dp))
+        Text("Jenis", style = MaterialTheme.typography.labelSmall, color = if (isDark) Lavender400 else Gray600)
+        Spacer(Modifier.height(4.dp))
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            NoteType.entries.forEach { t ->
+                val sel = t == metadata.type
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (sel) (if (isDark) Lavender600.copy(0.4f) else Lavender100)
+                            else (if (isDark) GlassDark else GlassLight)
+                        )
+                        .clickable { onChange(metadata.copy(type = t)) }
+                        .padding(horizontal = 12.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        t.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (sel) (if (isDark) Lavender200 else Lavender600)
+                                else (if (isDark) Lavender400 else Gray600)
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = metadata.startTime ?: "",
+                onValueChange = { onChange(metadata.copy(startTime = it.ifBlank { null })) },
+                label = { Text("Mulai (HH:mm)") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                colors = fieldColors
+            )
+            OutlinedTextField(
+                value = metadata.endTime ?: "",
+                onValueChange = { onChange(metadata.copy(endTime = it.ifBlank { null })) },
+                label = { Text("Selesai (HH:mm)") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                colors = fieldColors
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = datesText,
+            onValueChange = { text ->
+                datesText = text
+                val parsed = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                onChange(metadata.copy(recurrenceDates = parsed))
+            },
+            label = { Text("Tanggal (YYYY-MM-DD, pisah koma)") },
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            colors = fieldColors
+        )
+        Text(
+            "Contoh: 2026-06-20, 2026-06-27",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) Lavender400 else Gray400,
+            modifier = Modifier.padding(top = 2.dp)
+        )
     }
 }
