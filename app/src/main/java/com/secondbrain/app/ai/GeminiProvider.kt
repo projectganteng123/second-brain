@@ -96,7 +96,35 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
                 "Generative Language API belum aktif di project Google kamu. Buka console.developers.google.com → aktifkan \"Generative Language API\", lalu coba lagi. Atau buat API key baru di aistudio.google.com."
             else "Akses ditolak (403): ${apiMessage ?: "periksa izin API key"}"
             404 -> "Model AI tidak ditemukan (404). Mungkin nama model tidak tersedia untuk key kamu: ${apiMessage ?: ""}"
-            429 -> "Kuota gratis Gemini habis untuk sementara (429). Tunggu beberapa saat lalu coba lagi."
+            429 -> {
+                val quotaId = runCatching {
+                    JsonParser.parseString(body).asJsonObject
+                        .getAsJsonObject("error").getAsJsonArray("details")
+                        .firstNotNullOf { d ->
+                            d.asJsonObject.getAsJsonArray("violations")
+                                ?.get(0)?.asJsonObject?.get("quotaId")?.asString
+                        }
+                }.getOrNull()
+                val retry = runCatching {
+                    JsonParser.parseString(body).asJsonObject
+                        .getAsJsonObject("error").getAsJsonArray("details")
+                        .firstNotNullOf { d ->
+                            d.asJsonObject.get("retryDelay")?.asString
+                        }
+                }.getOrNull()
+                val perDay = quotaId?.contains("PerDay", true) == true
+                buildString {
+                    append("Limit Gemini tercapai (429). ")
+                    when {
+                        perDay -> append("Kuota harian gratis habis (reset tengah malam waktu Pasifik). ")
+                        quotaId != null -> append("Limit per-menit tercapai. ")
+                        else -> append("")
+                    }
+                    if (retry != null) append("Coba lagi dalam $retry. ")
+                    if (quotaId != null) append("[$quotaId]")
+                    if (apiMessage != null && quotaId == null) append(apiMessage)
+                }
+            }
             in 500..599 -> "Server Gemini sedang bermasalah ($status). Coba lagi nanti."
             else -> "Gagal ($status): ${apiMessage ?: body.take(200)}"
         }
