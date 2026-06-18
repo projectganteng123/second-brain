@@ -3,7 +3,7 @@ package com.secondbrain.app.navigation
 import androidx.compose.runtime.*
 import androidx.navigation.*
 import androidx.navigation.compose.*
-import com.google.gson.Gson
+import com.secondbrain.app.data.GsonProvider
 import com.secondbrain.app.data.model.Metadata
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.screens.*
@@ -38,7 +38,7 @@ fun NavGraph(
     prefs: PrefsManager,
     openInput: Boolean = false
 ) {
-    val gson = remember { Gson() }
+    val gson = remember { GsonProvider.gson }
     val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
     val inputVm = remember { InputViewModel(repo, prefs) }

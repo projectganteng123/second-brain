@@ -1,7 +1,7 @@
 package com.secondbrain.app.ai
 
-import com.google.gson.Gson
 import com.google.gson.JsonParser
+import com.secondbrain.app.data.GsonProvider
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.util.DebugLog
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +12,7 @@ import java.net.URL
 
 class GeminiProvider(private val config: AIConfig) : AIProvider {
 
-    private val gson = Gson()
+    private val gson = GsonProvider.gson
 
     override suspend fun extractMetadata(rawText: String, currentDateTime: String): Result<Metadata> =
         withContext(Dispatchers.IO) {

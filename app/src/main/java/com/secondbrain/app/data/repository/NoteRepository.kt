@@ -1,6 +1,7 @@
 package com.secondbrain.app.data.repository
 
 import com.google.gson.Gson
+import com.secondbrain.app.data.GsonProvider
 import com.secondbrain.app.data.database.NoteDao
 import com.secondbrain.app.data.database.ReminderDao
 import com.secondbrain.app.data.model.*
@@ -14,7 +15,7 @@ import java.time.format.DateTimeFormatter
 class NoteRepository(
     private val noteDao: NoteDao,
     private val reminderDao: ReminderDao,
-    private val gson: Gson = Gson()
+    private val gson: Gson = GsonProvider.gson
 ) {
 
     fun getAllActive(): Flow<List<NoteEntity>> = noteDao.getAllActive()
