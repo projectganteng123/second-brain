@@ -9,5 +9,5 @@ interface AIProvider {
 
 data class AIConfig(
     val apiKey: String,
-    val model: String = "gemini-2.0-flash"
+    val model: String = "gemini-2.5-flash"
 )
