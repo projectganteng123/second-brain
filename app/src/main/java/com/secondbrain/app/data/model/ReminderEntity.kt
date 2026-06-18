@@ -20,5 +20,6 @@ data class ReminderEntity(
     val noteId: Long,
     val remindAt: Long,
     val message: String,
-    val isSent: Boolean = false
+    val isSent: Boolean = false,
+    val isAlarm: Boolean = false
 )

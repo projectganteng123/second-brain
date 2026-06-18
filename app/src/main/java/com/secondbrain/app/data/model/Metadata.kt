@@ -10,7 +10,12 @@ data class Metadata(
     val keywords: List<String> = emptyList(),
     val recurrenceDates: List<String> = emptyList(),
     val actions: List<ActionItem> = emptyList(),
-    val summary: String = ""
+    val summary: String = "",
+    /** Rekomendasi AI (string mentah, dipetakan ke enum dengan fallback). */
+    val priority: String? = null,
+    val status: String? = null,
+    /** Waktu persiapan absolut "yyyy-MM-ddTHH:mm" — diisi hanya jika user minta diingatkan persiapan. */
+    val preparationTime: String? = null
 )
 
 enum class NoteType(val label: String) {
@@ -53,13 +58,23 @@ enum class Priority(val label: String) {
     PENTING_URGEN("Penting & Urgen"),
     PENTING_TIDAK_URGEN("Penting, Tidak Urgen"),
     URGEN_TIDAK_PENTING("Urgen, Tidak Penting"),
-    TIDAK_PENTING_TIDAK_URGEN("Tidak Penting & Tidak Urgen")
+    TIDAK_PENTING_TIDAK_URGEN("Tidak Penting & Tidak Urgen");
+
+    companion object {
+        fun fromString(s: String?): Priority? =
+            s?.trim()?.let { v -> entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
+    }
 }
 
 enum class NoteStatus(val label: String) {
     BELUM_MULAI("Belum Mulai"),
     BERJALAN("Berjalan"),
-    SELESAI("Selesai")
+    SELESAI("Selesai");
+
+    companion object {
+        fun fromString(s: String?): NoteStatus? =
+            s?.trim()?.let { v -> entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
+    }
 }
 
 enum class InputSource { VOICE, TEXT }

@@ -35,7 +35,10 @@ Kembalikan JSON dengan struktur berikut (isi yang relevan, kosongkan array/null 
   "keywords": ["kata kunci penting"],
   "recurrenceDates": ["YYYY-MM-DD"],
   "actions": [{"action": "deskripsi aksi", "owner": "nama atau null", "deadline": "YYYY-MM-DD atau null"}],
-  "summary": "ringkasan 1-3 kalimat"
+  "summary": "ringkasan 1-3 kalimat",
+  "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
+  "status": "belum_mulai|berjalan|selesai",
+  "preparationTime": "YYYY-MM-DDTHH:mm atau null"
 }
 
 Aturan WAJIB:
@@ -55,6 +58,9 @@ Aturan WAJIB:
   Jika ada jam pasti (mis. "jam 3 sore"), gunakan jam itu (15:00), abaikan pemetaan di atas.
 - Jika tidak ada indikasi waktu sama sekali, "startTime" boleh null.
 - "type" harus salah satu dari: meeting, task, reminder, event, note, idea, personal.
+- "priority": tebak kuadran Eisenhower berdasarkan tingkat penting & mendesak dari isi catatan.
+- "status": isi "belum_mulai" jika kegiatan belum dikerjakan atau bersifat akan datang/nanti. Isi "berjalan" atau "selesai" HANYA jika teks jelas menyatakannya.
+- "preparationTime": isi HANYA jika pengguna secara eksplisit minta diingatkan untuk PERSIAPAN sebelum kegiatan (mis. "ingatkan sehari sebelumnya", "ingatkan 2 jam sebelum untuk siap-siap"). Hitung menjadi tanggal+jam absolut (yyyy-MM-ddTHH:mm) berdasarkan tanggal kegiatan dan waktu sekarang. Jika tidak diminta, isi null.
 - Kembalikan HANYA JSON, tidak ada teks lain.
 """.trimIndent()
 

@@ -28,7 +28,8 @@ class NoteRepository(
         prioritas: Priority? = null,
         status: NoteStatus? = null,
         source: InputSource = InputSource.TEXT,
-        offsetHours: Int = 24
+        offsetHours: Int = 24,
+        useAlarm: Boolean = false
     ): Long {
         val metaJson = gson.toJson(metadata)
         val entity = NoteEntity(
@@ -36,11 +37,12 @@ class NoteRepository(
             metadataJson = metaJson,
             prioritas = prioritas?.name,
             status = status?.name,
-            source = source.name.lowercase()
+            source = source.name.lowercase(),
+            useAlarm = useAlarm
         )
         val id = noteDao.insert(entity)
-        DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}\nmetadata=$metaJson")
-        generateReminders(id, metadata, offsetHours)
+        DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}, alarm=$useAlarm\nmetadata=$metaJson")
+        generateReminders(id, metadata, offsetHours, useAlarm)
         return id
     }
 
@@ -61,7 +63,15 @@ class NoteRepository(
             updatedAt = System.currentTimeMillis()
         ))
         reminderDao.deleteByNote(id)
-        generateReminders(id, metadata, offsetHours)
+        generateReminders(id, metadata, offsetHours, existing.useAlarm)
+    }
+
+    suspend fun setUseAlarm(id: Long, useAlarm: Boolean, offsetHours: Int) {
+        val existing = noteDao.getById(id) ?: return
+        noteDao.update(existing.copy(useAlarm = useAlarm, updatedAt = System.currentTimeMillis()))
+        val meta = metadataFrom(existing) ?: return
+        reminderDao.deleteByNote(id)
+        generateReminders(id, meta, offsetHours, useAlarm)
     }
 
     suspend fun update(note: NoteEntity) = noteDao.update(note)
@@ -80,18 +90,38 @@ class NoteRepository(
     suspend fun exportCsv(): String {
         val notes = noteDao.getAllOnce()
         val sb = StringBuilder()
-        sb.append("id,createdAt,title,type,startTime,recurrenceDates,prioritas,status,rawText\n")
+        fun esc(s: String?): String = "\"" + (s ?: "").replace("\"", "\"\"").replace("\n", " ") + "\""
+        sb.append("id,createdAt,updatedAt,title,type,startTime,endTime,recurrenceDates,locations,people,organizations,keywords,actions,preparationTime,priorityAI,statusAI,priorityManual,statusManual,useAlarm,archived,summary,rawText\n")
         for (n in notes) {
             val m = metadataFrom(n)
-            fun esc(s: String?): String = "\"" + (s ?: "").replace("\"", "\"\"").replace("\n", " ") + "\""
+            val actionsStr = m?.actions?.joinToString("; ") { a ->
+                buildString {
+                    append(a.action)
+                    a.owner?.let { append(" (").append(it).append(")") }
+                    a.deadline?.let { append(" -> ").append(it) }
+                }
+            }
             sb.append(n.id).append(',')
                 .append(esc(java.time.Instant.ofEpochMilli(n.createdAt).toString())).append(',')
+                .append(esc(java.time.Instant.ofEpochMilli(n.updatedAt).toString())).append(',')
                 .append(esc(m?.title)).append(',')
                 .append(esc(m?.type?.name)).append(',')
                 .append(esc(m?.startTime)).append(',')
+                .append(esc(m?.endTime)).append(',')
                 .append(esc(m?.recurrenceDates?.joinToString("; "))).append(',')
+                .append(esc(m?.locations?.joinToString("; ") { it.value })).append(',')
+                .append(esc(m?.entities?.people?.joinToString("; "))).append(',')
+                .append(esc(m?.entities?.organizations?.joinToString("; "))).append(',')
+                .append(esc(m?.keywords?.joinToString("; "))).append(',')
+                .append(esc(actionsStr)).append(',')
+                .append(esc(m?.preparationTime)).append(',')
+                .append(esc(m?.priority)).append(',')
+                .append(esc(m?.status)).append(',')
                 .append(esc(n.prioritas)).append(',')
                 .append(esc(n.status)).append(',')
+                .append(n.useAlarm).append(',')
+                .append(n.isArchived).append(',')
+                .append(esc(m?.summary)).append(',')
                 .append(esc(n.rawText)).append('\n')
         }
         return sb.toString()
@@ -205,7 +235,7 @@ class NoteRepository(
         }
     }
 
-    private suspend fun generateReminders(noteId: Long, metadata: Metadata, offsetHours: Int) {
+    private suspend fun generateReminders(noteId: Long, metadata: Metadata, offsetHours: Int, useAlarm: Boolean) {
         val reminders = mutableListOf<ReminderEntity>()
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE
         val nowMillis = System.currentTimeMillis()
@@ -226,7 +256,8 @@ class NoteRepository(
                 reminders.add(ReminderEntity(
                     noteId = noteId,
                     remindAt = offsetMillis,
-                    message = "Dalam $offsetHours jam: ${metadata.title}"
+                    message = "Dalam $offsetHours jam: ${metadata.title}",
+                    isAlarm = useAlarm
                 ))
             }
 
@@ -235,14 +266,30 @@ class NoteRepository(
                 reminders.add(ReminderEntity(
                     noteId = noteId,
                     remindAt = eventMillis,
-                    message = metadata.title
+                    message = metadata.title,
+                    isAlarm = useAlarm
+                ))
+            }
+        }
+
+        // Pengingat persiapan (waktu absolut), hanya jika diminta user pada catatan
+        metadata.preparationTime?.let { prep ->
+            val prepMillis = runCatching {
+                LocalDateTime.parse(prep, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")).toEpochMilli()
+            }.getOrNull()
+            if (prepMillis != null && prepMillis > nowMillis) {
+                reminders.add(ReminderEntity(
+                    noteId = noteId,
+                    remindAt = prepMillis,
+                    message = "Persiapan: ${metadata.title}",
+                    isAlarm = useAlarm
                 ))
             }
         }
 
         if (reminders.isNotEmpty()) {
             reminderDao.insertAll(reminders)
-            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (offset=$offsetHours jam)")
+            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (offset=$offsetHours jam, alarm=$useAlarm)")
         }
     }
 
