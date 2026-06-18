@@ -33,6 +33,7 @@ fun PreviewScreen(
     val uiState by vm.uiState.collectAsState()
     val selectedPrioritas by vm.selectedPrioritas.collectAsState()
     val selectedStatus by vm.selectedStatus.collectAsState()
+    val useAlarm by vm.useAlarm.collectAsState()
 
     var editedMetadata by remember { mutableStateOf(metadata) }
     var editing by remember { mutableStateOf(false) }
@@ -194,6 +195,13 @@ fun PreviewScreen(
                 Spacer(Modifier.height(4.dp))
                 PrioritySelector(selectedPrioritas, vm::setPrioritas)
 
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Dibiarkan = pakai rekomendasi AI.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDark) Lavender400 else Gray400
+                )
+
                 Spacer(Modifier.height(10.dp))
 
                 // Status
@@ -204,6 +212,34 @@ fun PreviewScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 StatusSelector(selectedStatus, vm::setStatus)
+
+                Spacer(Modifier.height(12.dp))
+
+                // Alarm toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Jadikan alarm", style = MaterialTheme.typography.bodyMedium,
+                            color = if (isDark) Lavender50 else Lavender800)
+                        Text("Pengingat berbunyi alarm + layar penuh, bukan sekadar notifikasi",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) Lavender400 else Gray600)
+                    }
+                    Switch(checked = useAlarm, onCheckedChange = vm::setUseAlarm)
+                }
+
+                if (editedMetadata.preparationTime != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Outlined.Alarm, null, modifier = Modifier.size(14.dp), tint = Mint600)
+                        Text("Pengingat persiapan: ${editedMetadata.preparationTime}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) Mint200 else Mint600)
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -371,6 +407,23 @@ private fun MetadataEditor(
         )
         Text(
             "Contoh: 2026-06-20, 2026-06-27",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) Lavender400 else Gray400,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = metadata.preparationTime ?: "",
+            onValueChange = { onChange(metadata.copy(preparationTime = it.ifBlank { null })) },
+            label = { Text("Waktu persiapan (YYYY-MM-DDTHH:mm)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            colors = fieldColors
+        )
+        Text(
+            "Pengingat persiapan. Contoh: 2026-06-23T19:00 (kosongkan jika tak perlu)",
             style = MaterialTheme.typography.labelSmall,
             color = if (isDark) Lavender400 else Gray400,
             modifier = Modifier.padding(top = 2.dp)

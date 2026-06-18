@@ -20,6 +20,7 @@ object ReminderScheduler {
             val intent = Intent(context, ReminderReceiver::class.java).apply {
                 putExtra(ReminderReceiver.EXTRA_REMINDER_ID, reminder.id)
                 putExtra(ReminderReceiver.EXTRA_MESSAGE, reminder.message)
+                putExtra(ReminderReceiver.EXTRA_IS_ALARM, reminder.isAlarm)
             }
             val pi = PendingIntent.getBroadcast(
                 context,

@@ -238,6 +238,22 @@ fun NoteDetailScreen(
                         )
                     }
                 }
+
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Jadikan alarm", style = MaterialTheme.typography.bodyMedium,
+                            color = if (isDark) Lavender50 else Lavender800)
+                        Text("Pengingat berbunyi alarm + layar penuh",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isDark) Lavender400 else Gray600)
+                    }
+                    Switch(checked = note.useAlarm, onCheckedChange = { vm.setUseAlarm(it) })
+                }
             }
 
             Spacer(Modifier.height(40.dp))

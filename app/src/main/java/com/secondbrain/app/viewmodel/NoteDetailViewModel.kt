@@ -58,6 +58,17 @@ class NoteDetailViewModel(
         }
     }
 
+    fun setUseAlarm(v: Boolean) {
+        val note = _state.value.note ?: return
+        viewModelScope.launch {
+            repo.setUseAlarm(note.id, v, prefs.getReminderOffsetHours())
+            _state.value = _state.value.copy(
+                note = note.copy(useAlarm = v),
+                message = if (v) "Pengingat dijadikan alarm" else "Alarm dimatikan"
+            )
+        }
+    }
+
     fun toggleArchive() {
         val note = _state.value.note ?: return
         viewModelScope.launch {

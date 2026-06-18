@@ -110,7 +110,9 @@ fun SettingsScreen(
             GlassCard {
                 SectionLabel("Gemini API", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Dapatkan API key gratis di Google AI Studio (aistudio.google.com).",
+                    "Dapatkan API key gratis di Google AI Studio (aistudio.google.com). " +
+                    "Bisa isi LEBIH DARI SATU key — satu per baris. Jika satu key kehabisan limit harian, " +
+                    "app otomatis mencoba key berikutnya.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
@@ -118,10 +120,10 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = apiKey,
                     onValueChange = { apiKey = it; saved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Gemini API Key") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
+                    label = { Text("Gemini API Key (satu per baris)") },
                     placeholder = { Text("AIzaSy...") },
-                    singleLine = true,
+                    singleLine = false,
                     visualTransformation = if (showKey) VisualTransformation.None
                                           else PasswordVisualTransformation(),
                     trailingIcon = {
