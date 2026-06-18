@@ -1,0 +1,55 @@
+package com.secondbrain.app.data.model
+
+data class Metadata(
+    val title: String = "",
+    val type: NoteType = NoteType.NOTE,
+    val startTime: String? = null,
+    val endTime: String? = null,
+    val locations: List<LocationEntry> = emptyList(),
+    val entities: Entities = Entities(),
+    val keywords: List<String> = emptyList(),
+    val recurrenceDates: List<String> = emptyList(),
+    val actions: List<ActionItem> = emptyList(),
+    val summary: String = ""
+)
+
+enum class NoteType(val label: String) {
+    MEETING("Meeting"),
+    TASK("Tugas"),
+    REMINDER("Pengingat"),
+    EVENT("Acara"),
+    NOTE("Catatan"),
+    IDEA("Ide"),
+    PERSONAL("Personal")
+}
+
+data class LocationEntry(
+    val type: String = "location",
+    val value: String = ""
+)
+
+data class Entities(
+    val people: List<String> = emptyList(),
+    val organizations: List<String> = emptyList()
+)
+
+data class ActionItem(
+    val action: String = "",
+    val owner: String? = null,
+    val deadline: String? = null
+)
+
+enum class Priority(val label: String) {
+    PENTING_URGEN("Penting & Urgen"),
+    PENTING_TIDAK_URGEN("Penting, Tidak Urgen"),
+    URGEN_TIDAK_PENTING("Urgen, Tidak Penting"),
+    TIDAK_PENTING_TIDAK_URGEN("Tidak Penting & Tidak Urgen")
+}
+
+enum class NoteStatus(val label: String) {
+    BELUM_MULAI("Belum Mulai"),
+    BERJALAN("Berjalan"),
+    SELESAI("Selesai")
+}
+
+enum class InputSource { VOICE, TEXT }
