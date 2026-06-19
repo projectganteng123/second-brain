@@ -26,8 +26,15 @@ fun NoteDetailScreen(
     val isDark = isSystemDark()
     val state by vm.state.collectAsState()
 
+    val rescheduleContext = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(noteId) { vm.load(noteId) }
     LaunchedEffect(state.deleted) { if (state.deleted) onDeleted() }
+    // Jadwalkan ulang alarm setiap kali catatan berubah (toggle alarm / proses ulang)
+    LaunchedEffect(state.note?.updatedAt, state.note?.useAlarm) {
+        if (state.note != null) {
+            runCatching { com.secondbrain.app.notification.ReminderScheduler.scheduleUpcoming(rescheduleContext) }
+        }
+    }
 
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {

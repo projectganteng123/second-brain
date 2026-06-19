@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.data.model.*
-import com.secondbrain.app.notification.ReminderWorker
+import com.secondbrain.app.notification.ReminderScheduler
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.viewmodel.InputUiState
@@ -41,7 +41,8 @@ fun PreviewScreen(
 
     LaunchedEffect(uiState) {
         if (uiState is InputUiState.Saved) {
-            ReminderWorker.enqueueNow(context)
+            // Jadwalkan alarm langsung (tanpa delay WorkManager) agar reminder dekat-waktu tetap bunyi
+            runCatching { ReminderScheduler.scheduleUpcoming(context) }
             onSaved()
             vm.reset()
         }
