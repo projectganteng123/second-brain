@@ -89,6 +89,8 @@ fun NavGraph(
                 if (state is com.secondbrain.app.viewmodel.InputUiState.Preview) {
                     val json = java.net.URLEncoder.encode(gson.toJson(state.metadata), "UTF-8")
                     navController.navigate("preview/$json")
+                    // Reset agar kembali ke Input tidak melempar lagi ke Preview
+                    inputVm.onPreviewNavigated()
                 }
             }
 

@@ -114,6 +114,12 @@ class InputViewModel(
         }
     }
 
+    /** Dipanggil setelah berpindah ke layar Preview, agar kembali ke Input tidak memicu
+     *  navigasi ulang ke Preview (metadata sudah dibawa lewat argumen navigasi). */
+    fun onPreviewNavigated() {
+        if (_uiState.value is InputUiState.Preview) _uiState.value = InputUiState.Idle
+    }
+
     fun reset() {
         _rawText.value = ""
         _selectedPrioritas.value = null

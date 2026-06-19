@@ -45,15 +45,11 @@ class AIService(
             }
             val e = res.exceptionOrNull()
             last = e
-            if (e is GeminiException) {
-                if (e.isDailyLimit) sawDaily = true
-                // Limit / auth / akses / model: coba kombinasi (key×model) berikutnya
-                DebugLog.log("AI ↪ coba lain", "key=${mask(key)} model=$model gagal (${e.status}), lanjut")
-                continue
-            } else {
-                // error non-HTTP (parsing/jaringan) → hentikan
-                return res
-            }
+            if (e is GeminiException && e.isDailyLimit) sawDaily = true
+            // Coba kombinasi (key×model) berikutnya untuk SEMUA jenis kegagalan:
+            // limit, auth, model tidak ada, model sibuk (503), timeout/jaringan, atau parsing.
+            val reason = if (e is GeminiException) "HTTP ${e.status}" else (e?.javaClass?.simpleName ?: "error")
+            DebugLog.log("AI ↪ coba lain", "key=${mask(key)} model=$model gagal ($reason), lanjut")
         }
 
         val msg = if (sawDaily)
