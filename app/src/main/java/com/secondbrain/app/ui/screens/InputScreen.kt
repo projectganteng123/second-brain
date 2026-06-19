@@ -1,12 +1,7 @@
 package com.secondbrain.app.ui.screens
 
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -26,13 +21,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.secondbrain.app.capture.*
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
+import com.secondbrain.app.util.PrefsManager
 import com.secondbrain.app.viewmodel.InputUiState
 import com.secondbrain.app.viewmodel.InputViewModel
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun InputScreen(
     vm: InputViewModel,
@@ -40,153 +44,220 @@ fun InputScreen(
     onSaved: () -> Unit
 ) {
     val isDark = isSystemDark()
-    val uiState by vm.uiState.collectAsState()
-    val rawText by vm.rawText.collectAsState()
-
-    var isListening by remember { mutableStateOf(false) }
-    var hasMicPermission by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val uiState by vm.uiState.collectAsState()
 
+    val prefs = remember { PrefsManager(context) }
+    val controller = remember { GuidedCaptureController() }
+    val session = remember { SttSession(context) }
+    DisposableEffect(Unit) { onDispose { session.destroy() } }
+
+    // Inisialisasi dari teks vm bila kembali ke layar ini
     LaunchedEffect(Unit) {
-        hasMicPermission = ContextCompat.checkSelfPermission(
-            context, Manifest.permission.RECORD_AUDIO
-        ) == PackageManager.PERMISSION_GRANTED
+        val t = vm.rawText.value
+        if (t.isNotEmpty() && controller.value.text.isEmpty()) {
+            controller.onValueChange(TextFieldValue(t, androidx.compose.ui.text.TextRange(t.length)))
+        }
     }
 
+    var selectedTemplate by remember { mutableStateOf(CaptureTemplates.byId(prefs.getDefaultTemplateId())) }
+
+    var recording by remember { mutableStateOf(false) }
+    var cuePhase by remember { mutableStateOf<SttSession.Phase>(SttSession.Phase.Preparing) }
+    var activeLabel by remember { mutableStateOf<String?>(null) }
+    var captureCanceled by remember { mutableStateOf(false) }
+    var pendingStart by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingPermStart by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    var hasMicPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+        )
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasMicPermission = granted
-        if (granted) {
-            isListening = true
-            startStt(context) { result ->
-                vm.appendText(result)   // tambahkan, jangan timpa
-                isListening = false
-            }
-        }
+        if (granted) { pendingPermStart?.invoke() }
+        pendingPermStart = null
     }
 
-    fun toggleListening() {
-        if (isListening) {
-            isListening = false
+    fun finalizeCapture(label: String?, target: ButtonTarget, result: String) {
+        recording = false
+        controller.setHighlight(null)
+        if (!captureCanceled) {
+            if (result.isNotBlank()) {
+                when (target) {
+                    is ButtonTarget.Insert ->
+                        if (label != null) controller.insertLabeledBlock(label, result)
+                        else controller.appendPlain(result)
+                    is ButtonTarget.Replace -> controller.replaceBlock(target.block, label ?: "", result)
+                }
+            } else if (target is ButtonTarget.Replace) {
+                // Selesai dengan hasil kosong saat re-record → blok lama dihapus
+                controller.replaceBlock(target.block, label ?: "", "")
+            }
+        }
+        vm.updateText(controller.value.text)
+        pendingStart?.let { val s = it; pendingStart = null; s() }
+    }
+
+    fun beginCapture(label: String?) {
+        val target = if (label == null) ButtonTarget.Insert else controller.targetForButton()
+        if (target is ButtonTarget.Replace) controller.setHighlight(target.block.start) // Pengaman 2
+        activeLabel = label
+        captureCanceled = false
+        recording = true
+        cuePhase = SttSession.Phase.Preparing
+        session.start(
+            onPhase = { cuePhase = it },
+            onFinal = { result -> finalizeCapture(label, target, result) }
+        )
+    }
+
+    fun requestCapture(label: String?) {
+        if (!hasMicPermission) {
+            pendingPermStart = { beginCapture(label) }
+            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
-        if (hasMicPermission) {
-            isListening = true
-            startStt(context) { result ->
-                vm.appendText(result)
-                isListening = false
-            }
-        } else {
-            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
+        if (recording) {
+            pendingStart = { beginCapture(label) }   // serial: selesaikan dulu, baru mulai berikutnya
+            session.stop()
+        } else beginCapture(label)
     }
 
     LaunchedEffect(uiState) {
         if (uiState is InputUiState.Saved) {
+            controller.clear()
             onSaved()
             vm.reset()
         }
     }
 
-    val bgColor = if (isDark) Lavender900 else Gray50
+    val labelColor = if (isDark) Lavender200 else Lavender600
+    val hlBg = if (isDark) Peach600.copy(0.30f) else Peach200
+    val transform = VisualTransformation { annotated ->
+        val s = annotated.text
+        val styled = buildAnnotatedString {
+            append(s)
+            controller.blocks.forEach { b ->
+                val st = b.start.coerceIn(0, s.length)
+                val le = b.labelEnd.coerceIn(st, s.length)
+                if (le > st) addStyle(SpanStyle(color = labelColor, fontWeight = FontWeight.Medium), st, le)
+                if (controller.highlightStart == b.start) {
+                    val en = b.end.coerceIn(st, s.length)
+                    if (en > st) addStyle(SpanStyle(background = hlBg), st, en)
+                }
+            }
+        }
+        TransformedText(styled, OffsetMapping.Identity)
+    }
 
+    val bgColor = if (isDark) Lavender900 else Gray50
     Scaffold(containerColor = bgColor) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
             Spacer(Modifier.height(16.dp))
-
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.Outlined.ArrowBack, "Kembali", tint = if (isDark) Lavender200 else Lavender600)
                 }
-                Text(
-                    "Catatan baru",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isDark) Lavender50 else Lavender800
-                )
+                Text("Catatan baru", style = MaterialTheme.typography.titleMedium,
+                    color = if (isDark) Lavender50 else Lavender800)
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(14.dp))
 
-            // ----- Tombol mic besar (mode utama) -----
-            Column(
+            // ----- Pemilih template -----
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val micBg = when {
-                    isListening -> Peach600
-                    isDark -> Lavender600.copy(0.35f)
-                    else -> Lavender100
+                SectionLabel("pemandu (opsional)")
+                if (selectedTemplate != null) {
+                    val isDefault = prefs.getDefaultTemplateId() == selectedTemplate!!.id
+                    TextButton(onClick = {
+                        prefs.saveDefaultTemplateId(if (isDefault) null else selectedTemplate!!.id)
+                    }) {
+                        Icon(
+                            if (isDefault) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                            null, modifier = Modifier.size(15.dp), tint = Lavender600
+                        )
+                        Spacer(Modifier.width(3.dp))
+                        Text(if (isDefault) "Default" else "Jadikan default",
+                            style = MaterialTheme.typography.labelSmall, color = Lavender600)
+                    }
                 }
-                val micTint = when {
-                    isListening -> androidx.compose.ui.graphics.Color.White
-                    isDark -> Lavender200
-                    else -> Lavender600
+            }
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip("Bebas", selectedTemplate == null, isDark) { selectedTemplate = null }
+                CaptureTemplates.BUILT_IN.forEach { t ->
+                    Chip(t.name, selectedTemplate?.id == t.id, isDark) { selectedTemplate = t }
                 }
-                Box(
-                    modifier = Modifier
-                        .size(96.dp)
-                        .clip(CircleShape)
-                        .background(micBg)
-                        .border(1.dp, if (isDark) GlassBorderDark else GlassBorderLight, CircleShape)
-                        .clickable { toggleListening() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        if (isListening) Icons.Outlined.Stop else Icons.Outlined.Mic,
-                        contentDescription = if (isListening) "Berhenti" else "Rekam suara",
-                        tint = micTint,
-                        modifier = Modifier.size(40.dp)
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (isListening) "Sedang mendengarkan..." else "Ketuk untuk merekam suara",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isDark) Lavender200 else Lavender600
-                )
-                Text(
-                    "Hasil suara ditambahkan ke teks di bawah",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (isDark) Lavender400 else Gray400,
-                    textAlign = TextAlign.Center
-                )
             }
 
-            Spacer(Modifier.height(18.dp))
+            // ----- Tombol pertanyaan -----
+            selectedTemplate?.let { tpl ->
+                Spacer(Modifier.height(10.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    tpl.questions.forEach { q ->
+                        GlassButton(
+                            text = q,
+                            icon = Icons.Outlined.Mic,
+                            onClick = { requestCapture(q) }
+                        )
+                    }
+                }
+            }
 
-            // ----- Teks catatan (selalu ada, bisa diketik manual) -----
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Cue rekam -----
+            if (recording) {
+                RecordingCue(
+                    label = activeLabel,
+                    phase = cuePhase,
+                    onDone = { session.stop() },
+                    onCancel = { captureCanceled = true; session.cancel() }
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+
+            // ----- Mic bebas + teks -----
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 SectionLabel("teks catatan")
-                // mic kecil selalu tersedia walau sedang mengetik
-                Icon(
-                    if (isListening) Icons.Outlined.Stop else Icons.Outlined.Mic,
-                    contentDescription = "Tambah suara",
-                    tint = if (isListening) Peach600 else (if (isDark) Lavender400 else Lavender600),
-                    modifier = Modifier.size(20.dp).clickable { toggleListening() }
-                )
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                        .background(if (recording && activeLabel == null) Peach600 else (if (isDark) Lavender600.copy(0.3f) else Lavender100))
+                        .clickable { requestCapture(null) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Mic, "Rekam bebas",
+                        tint = if (recording && activeLabel == null) androidx.compose.ui.graphics.Color.White
+                               else (if (isDark) Lavender200 else Lavender600),
+                        modifier = Modifier.size(20.dp))
+                }
             }
             Spacer(Modifier.height(6.dp))
             OutlinedTextField(
-                value = rawText,
-                onValueChange = vm::updateText,
+                value = controller.value,
+                onValueChange = { controller.onValueChange(it); vm.updateText(it.text) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 placeholder = {
-                    Text(
-                        "Rekam suara di atas, atau ketik langsung di sini...",
-                        color = if (isDark) Lavender400.copy(0.5f) else Gray400
-                    )
+                    Text("Ketik, rekam bebas, atau ketuk tombol pemandu di atas…",
+                        color = if (isDark) Lavender400.copy(0.5f) else Gray400)
                 },
+                visualTransformation = transform,
                 shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Lavender400,
@@ -198,15 +269,13 @@ fun InputScreen(
                 )
             )
             Spacer(Modifier.height(4.dp))
-            Text(
-                "${rawText.length} karakter",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (isDark) Lavender400 else Gray400
-            )
+            Text("${controller.value.text.length} karakter",
+                style = MaterialTheme.typography.labelSmall, color = if (isDark) Lavender400 else Gray400)
 
             Spacer(Modifier.height(12.dp))
 
-            if (rawText.isBlank()) {
+            val text = controller.value.text
+            if (text.isBlank()) {
                 TipBox(isDark)
             } else {
                 if (uiState is InputUiState.Error) {
@@ -219,16 +288,13 @@ fun InputScreen(
                     icon = Icons.Outlined.AutoAwesome,
                     onClick = vm::processWithAI,
                     accent = true,
-                    enabled = !isLoading,
+                    enabled = !isLoading && !recording,
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (uiState is InputUiState.Error) {
                     Spacer(Modifier.height(8.dp))
-                    GlassButton(
-                        text = "Simpan tanpa AI (offline)",
-                        onClick = vm::savePendingOffline,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    GlassButton(text = "Simpan tanpa AI (offline)",
+                        onClick = vm::savePendingOffline, modifier = Modifier.fillMaxWidth())
                 }
             }
 
@@ -238,67 +304,43 @@ fun InputScreen(
 }
 
 @Composable
+private fun Chip(label: String, sel: Boolean, isDark: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (sel) (if (isDark) Lavender600.copy(0.4f) else Lavender100)
+                else (if (isDark) GlassDark else GlassLight)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = if (sel) (if (isDark) Lavender200 else Lavender600) else (if (isDark) Lavender400 else Gray600))
+    }
+}
+
+@Composable
 private fun TipBox(isDark: Boolean) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (isDark) Sky600.copy(0.1f) else Sky50, RoundedCornerShape(12.dp))
-            .padding(10.dp),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (isDark) Sky600.copy(0.1f) else Sky50, RoundedCornerShape(12.dp)).padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(Icons.Outlined.Lightbulb, null, tint = Sky600, modifier = Modifier.size(16.dp))
-        Text(
-            "Sebutkan waktu, orang, dan tempat secara spesifik agar AI dapat mengekstrak metadata dengan akurat.",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (isDark) Sky200 else Sky800
-        )
+        Text("Ketuk tombol pemandu untuk menjawab per bagian, atau catat bebas. Sebutkan waktu, orang, tempat agar AI akurat.",
+            style = MaterialTheme.typography.bodySmall, color = if (isDark) Sky200 else Sky800)
     }
 }
 
 @Composable
 private fun ErrorBox(message: String, isDark: Boolean) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(if (isDark) Rose600.copy(0.1f) else Rose50, RoundedCornerShape(12.dp))
-            .padding(10.dp),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (isDark) Rose600.copy(0.1f) else Rose50, RoundedCornerShape(12.dp)).padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(Icons.Outlined.ErrorOutline, null, tint = Rose600, modifier = Modifier.size(16.dp))
         Text(message, style = MaterialTheme.typography.bodySmall, color = if (isDark) Rose200 else Rose800)
     }
-}
-
-private fun startStt(
-    context: android.content.Context,
-    onResult: (String) -> Unit
-) {
-    if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-        onResult("")
-        return
-    }
-    val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
-        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-    }
-    recognizer.setRecognitionListener(object : RecognitionListener {
-        override fun onResults(results: Bundle?) {
-            val text = results
-                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                ?.firstOrNull() ?: ""
-            onResult(text)
-            recognizer.destroy()
-        }
-        override fun onError(error: Int) { onResult(""); recognizer.destroy() }
-        override fun onReadyForSpeech(params: Bundle?) {}
-        override fun onBeginningOfSpeech() {}
-        override fun onRmsChanged(rmsdB: Float) {}
-        override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() {}
-        override fun onPartialResults(partialResults: Bundle?) {}
-        override fun onEvent(eventType: Int, params: Bundle?) {}
-    })
-    recognizer.startListening(intent)
 }
