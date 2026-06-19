@@ -119,6 +119,9 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             400 -> if (apiMessage?.contains("API key not valid", true) == true || apiMessage?.contains("API_KEY_INVALID", true) == true)
                 "API key tidak valid. Pastikan kamu menyalin key dengan benar di Pengaturan."
             else "Permintaan ditolak (400): ${apiMessage ?: "format tidak sesuai"}"
+            401 -> "API key tidak dikenali (401). Kemungkinan key tersimpan tidak persis sama " +
+                "(ada spasi/karakter tersembunyi) atau Generative Language API belum aktif di project key tsb. " +
+                "Hapus isi field, tempel ulang HANYA key baru, lalu Simpan."
             403 -> if (apiMessage?.contains("SERVICE_DISABLED", true) == true ||
                        apiMessage?.contains("has not been used", true) == true ||
                        apiMessage?.contains("disabled", true) == true)

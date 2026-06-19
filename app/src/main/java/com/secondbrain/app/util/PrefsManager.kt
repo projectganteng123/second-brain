@@ -9,9 +9,10 @@ class PrefsManager(context: Context) {
     fun saveApiKey(key: String) = prefs.edit { putString(KEY_API, key) }
     fun getApiKey(): String = prefs.getString(KEY_API, "") ?: ""
 
-    /** Daftar API key (disimpan satu per baris). */
+    /** Daftar API key. Pisah berdasarkan whitespace apa pun (baris/spasi/\r/tab) agar
+     *  karakter tak terlihat tidak ikut terkirim ke URL. */
     fun getApiKeys(): List<String> =
-        getApiKey().split("\n").map { it.trim() }.filter { it.isNotBlank() }
+        getApiKey().split(Regex("\\s+")).map { it.trim() }.filter { it.isNotBlank() }
 
     fun saveReminderOffsetHours(hours: Int) = prefs.edit { putInt(KEY_REMINDER_OFFSET, hours) }
     fun getReminderOffsetHours(): Int = prefs.getInt(KEY_REMINDER_OFFSET, 24)
