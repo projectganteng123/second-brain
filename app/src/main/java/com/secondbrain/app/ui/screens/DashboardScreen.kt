@@ -36,7 +36,8 @@ fun DashboardScreen(
     onSearchClick: () -> Unit,
     onAskClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onAllNotesClick: () -> Unit
+    onAllNotesClick: () -> Unit,
+    onGanttClick: () -> Unit
 ) {
     val isDark = isSystemDark()
     val notes by vm.filteredNotes.collectAsState()
@@ -89,11 +90,16 @@ fun DashboardScreen(
                             color = if (isDark) Lavender400 else Gray600
                         )
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(
                             Icons.Outlined.AutoAwesome, "Tanya AI",
                             tint = if (isDark) Lavender400 else Lavender600,
                             modifier = Modifier.size(22.dp).clickable(onClick = onAskClick)
+                        )
+                        Icon(
+                            Icons.Outlined.Timeline, "Gantt jadwal",
+                            tint = if (isDark) Lavender400 else Lavender600,
+                            modifier = Modifier.size(22.dp).clickable(onClick = onGanttClick)
                         )
                         Icon(
                             Icons.Outlined.Notes, "Semua catatan",

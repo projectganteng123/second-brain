@@ -26,6 +26,7 @@ sealed class Screen(val route: String) {
     object AllNotes  : Screen("allnotes")
     object Archive   : Screen("archive")
     object ActionItems : Screen("actionitems")
+    object Gantt     : Screen("gantt")
     object Detail    : Screen("detail/{noteId}") {
         fun go(noteId: Long) = "detail/$noteId"
     }
@@ -59,7 +60,16 @@ fun NavGraph(
                 onSearchClick = { navController.navigate(Screen.Search.route) },
                 onAskClick = { navController.navigate(Screen.Qa.route) },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
-                onAllNotesClick = { navController.navigate(Screen.AllNotes.route) }
+                onAllNotesClick = { navController.navigate(Screen.AllNotes.route) },
+                onGanttClick = { navController.navigate(Screen.Gantt.route) }
+            )
+        }
+
+        composable(Screen.Gantt.route) {
+            GanttScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
             )
         }
 
