@@ -60,7 +60,7 @@ class QaViewModel(
                 QaSource(note.id, title)
             }
 
-            val service = AIService(keys, prefs.getModel(), PrefsManager.MODEL_OPTIONS, null)
+            val service = AIService(keys, PrefsManager.ANSWER_MODELS, null)
             service.answerQuestion(q, context)
                 .onSuccess { _state.value = QaState.Answer(it, sources) }
                 .onFailure { _state.value = QaState.Error(it.message ?: "Gagal menjawab") }

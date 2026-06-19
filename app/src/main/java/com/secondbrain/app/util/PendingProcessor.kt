@@ -21,8 +21,7 @@ object PendingProcessor {
         DebugLog.log("Pending", "Memproses ${pending.size} catatan tertunda")
         val service = AIService(
             keys = keys,
-            preferredModel = prefs.getModel(),
-            modelPool = PrefsManager.MODEL_OPTIONS,
+            models = PrefsManager.EXTRACTION_MODELS,
             promptTemplate = prefs.getCustomPrompt().ifBlank { null }
         )
         val offset = prefs.getReminderOffsetHours()

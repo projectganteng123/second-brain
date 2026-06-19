@@ -10,15 +10,12 @@ import com.secondbrain.app.util.DebugLog
  */
 class AIService(
     private val keys: List<String>,
-    private val preferredModel: String,
-    private val modelPool: List<String>,
+    private val models: List<String>,
     private val promptTemplate: String?
 ) {
 
-    private fun combos(): List<Pair<String, String>> {
-        val models = (listOf(preferredModel) + modelPool).distinct()
-        return keys.flatMap { k -> models.map { m -> k to m } }
-    }
+    private fun combos(): List<Pair<String, String>> =
+        keys.flatMap { k -> models.distinct().map { m -> k to m } }
 
     suspend fun extractMetadata(rawText: String, now: String): Result<Metadata> =
         runFallback { it.extractMetadata(rawText, now) }

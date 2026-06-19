@@ -69,8 +69,7 @@ class InputViewModel(
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
             val service = AIService(
                 keys = keys,
-                preferredModel = prefs.getModel(),
-                modelPool = PrefsManager.MODEL_OPTIONS,
+                models = PrefsManager.EXTRACTION_MODELS,
                 promptTemplate = prefs.getCustomPrompt().ifBlank { null }
             )
             service.extractMetadata(text, now)

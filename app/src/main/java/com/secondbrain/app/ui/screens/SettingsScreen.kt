@@ -45,7 +45,6 @@ fun SettingsScreen(
     var showKey by remember { mutableStateOf(false) }
     var saved by remember { mutableStateOf(false) }
 
-    var selectedModel by remember { mutableStateOf(prefs.getModel()) }
     var offsetHours by remember { mutableIntStateOf(prefs.getReminderOffsetHours()) }
 
     // Export launchers
@@ -162,24 +161,15 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // ----- Model AI -----
+            // ----- Model AI (otomatis) -----
             GlassCard {
                 SectionLabel("model AI", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Pilih model Gemini. Jika satu model kena limit/dihapus dari free tier, ganti ke yang lain.",
+                    "Model dipilih otomatis & gratis. Ekstraksi memakai model ringan; menjawab pertanyaan " +
+                    "memakai model lebih kuat. Jika satu model kena limit harian, app otomatis pindah ke " +
+                    "model lain pada tangga: " + PrefsManager.MODEL_LADDER.joinToString(" → "),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
-                )
-                Spacer(Modifier.height(8.dp))
-                FlowChips(
-                    options = PrefsManager.MODEL_OPTIONS,
-                    selected = selectedModel,
-                    isDark = isDark,
-                    onSelect = {
-                        selectedModel = it
-                        prefs.saveModel(it)
-                        scope.launch { snackbar.showSnackbar("Model: $it") }
-                    }
                 )
             }
 
