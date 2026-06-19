@@ -22,10 +22,17 @@ class PrefsManager(context: Context) {
     fun getCustomPrompt(): String = prefs.getString(KEY_CUSTOM_PROMPT, "") ?: ""
     fun clearCustomPrompt() = prefs.edit { remove(KEY_CUSTOM_PROMPT) }
 
+    /** Template capture yang aktif saat layar input dibuka (null = tidak ada). */
+    fun saveDefaultTemplateId(id: String?) = prefs.edit {
+        if (id == null) remove(KEY_DEFAULT_TEMPLATE) else putString(KEY_DEFAULT_TEMPLATE, id)
+    }
+    fun getDefaultTemplateId(): String? = prefs.getString(KEY_DEFAULT_TEMPLATE, null)
+
     companion object {
         private const val KEY_API = "gemini_api_key"
         private const val KEY_REMINDER_OFFSET = "reminder_offset_hours"
         private const val KEY_CUSTOM_PROMPT = "custom_extraction_prompt"
+        private const val KEY_DEFAULT_TEMPLATE = "default_template_id"
 
         /** Tangga model GRATIS, urut dari paling ringan ke paling kuat. Pro tidak dimasukkan (berbayar). */
         val MODEL_LADDER = listOf(
