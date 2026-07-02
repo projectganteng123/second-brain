@@ -32,6 +32,9 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.secondbrain.app.capture.*
 import com.secondbrain.app.data.model.Attachment
 import com.secondbrain.app.ui.components.*
@@ -89,6 +92,50 @@ fun InputScreen(
         pendingPermStart = null
     }
 
+    // ----- Kata pemicu suara (voice trigger) -----
+    val voiceTriggerEnabled = remember { prefs.isVoiceTriggerEnabled() }
+    var triggerMuted by remember { mutableStateOf(false) }
+    val voiceTrigger = remember {
+        VoiceTriggerController(
+            context,
+            triggerWord = { prefs.getVoiceTriggerWord() },
+            placeholderWord = { prefs.getVoiceTriggerPlaceholder() },
+            onInsert = { text ->
+                controller.appendPlain(text)
+                vm.updateText(controller.value.text)
+            }
+        )
+    }
+
+    // Hidup hanya selama layar ini di depan (ON_RESUME..ON_PAUSE); mati saat app ke background.
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    fun maybeResumeVoiceTrigger() {
+        if (voiceTriggerEnabled && hasMicPermission && !triggerMuted &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) voiceTrigger.startListening()
+    }
+
+    DisposableEffect(voiceTriggerEnabled, hasMicPermission, triggerMuted) {
+        val shouldListen = voiceTriggerEnabled && hasMicPermission && !triggerMuted
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> if (shouldListen && !recording) voiceTrigger.startListening()
+                Lifecycle.Event.ON_PAUSE -> voiceTrigger.stopListening()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        if (shouldListen && !recording &&
+            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        ) voiceTrigger.startListening()
+        if (!shouldListen) voiceTrigger.stopListening()
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            voiceTrigger.stopListening()
+        }
+    }
+
     fun finalizeCapture(label: String?, target: ButtonTarget, result: String) {
         recording = false
         controller.setHighlight(null)
@@ -106,10 +153,13 @@ fun InputScreen(
             }
         }
         vm.updateText(controller.value.text)
-        pendingStart?.let { val s = it; pendingStart = null; s() }
+        val queued = pendingStart
+        pendingStart = null
+        if (queued != null) queued() else maybeResumeVoiceTrigger()
     }
 
     fun beginCapture(label: String?) {
+        voiceTrigger.stopListening()   // lepas mic dari mode kata pemicu dulu (serial)
         val target = if (label == null) ButtonTarget.Insert else controller.targetForButton()
         if (target is ButtonTarget.Replace) controller.setHighlight(target.block.start) // Pengaman 2
         activeLabel = label
@@ -283,6 +333,21 @@ fun InputScreen(
                 }
             }
             Spacer(Modifier.height(2.dp))
+
+            // ----- Status kata pemicu suara -----
+            if (voiceTriggerEnabled) {
+                VoiceTriggerStatus(
+                    state = voiceTrigger.state,
+                    triggerWord = prefs.getVoiceTriggerWord(),
+                    muted = triggerMuted,
+                    hasPermission = hasMicPermission,
+                    isDark = isDark,
+                    onToggleMute = { triggerMuted = !triggerMuted },
+                    onEndDictation = { voiceTrigger.endDictation() },
+                    onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+                )
+                Spacer(Modifier.height(4.dp))
+            }
 
             // ----- Toolbar: alat edit + lampiran (ikon saja) -----
             Row(
@@ -468,6 +533,67 @@ fun InputScreen(
                 TextButton(onClick = { showLinkDialog = false }) { Text("Batal") }
             }
         )
+    }
+}
+
+@Composable
+private fun VoiceTriggerStatus(
+    state: VoiceTriggerController.State,
+    triggerWord: String,
+    muted: Boolean,
+    hasPermission: Boolean,
+    isDark: Boolean,
+    onToggleMute: () -> Unit,
+    onEndDictation: () -> Unit,
+    onRequestPermission: () -> Unit
+) {
+    val dictating = state is VoiceTriggerController.State.Dictating
+    val heard = (state as? VoiceTriggerController.State.Waiting)?.triggerHeard == true
+    val bg = when {
+        dictating -> if (isDark) Peach600.copy(0.25f) else Peach200.copy(0.5f)
+        heard -> if (isDark) Sky600.copy(0.2f) else Sky50
+        else -> if (isDark) GlassDark else GlassLight
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(bg, RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        val (icon, text, tint) = when {
+            !hasPermission -> Triple(Icons.Outlined.MicOff, "Izinkan mikrofon untuk kata pemicu", Lemon600)
+            muted -> Triple(Icons.Outlined.HearingDisabled, "Kata pemicu dijeda", if (isDark) Lavender400 else Gray400)
+            state is VoiceTriggerController.State.Unavailable -> Triple(Icons.Outlined.ErrorOutline, state.message, Rose600)
+            dictating -> Triple(Icons.Outlined.GraphicEq, "Mendengarkan — ucapan langsung dicatat", Peach600)
+            heard -> Triple(Icons.Outlined.Hearing, "Kata pemicu terdengar…", Sky600)
+            state is VoiceTriggerController.State.Waiting ->
+                Triple(Icons.Outlined.Hearing, "Menunggu \"$triggerWord\"…", if (isDark) Lavender400 else Gray600)
+            else -> Triple(Icons.Outlined.Hearing, "Kata pemicu nonaktif sementara", if (isDark) Lavender400 else Gray400)
+        }
+        Icon(icon, null, modifier = Modifier.size(15.dp), tint = tint)
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) Lavender200 else Lavender800,
+            modifier = if (!hasPermission) Modifier.weight(1f).clickable(onClick = onRequestPermission)
+                       else Modifier.weight(1f)
+        )
+        if (dictating) {
+            TextButton(onClick = onEndDictation, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Selesai", style = MaterialTheme.typography.labelSmall, color = Peach600)
+            }
+        }
+        if (hasPermission) {
+            IconButton(onClick = onToggleMute, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    if (muted) Icons.Outlined.Hearing else Icons.Outlined.HearingDisabled,
+                    if (muted) "Aktifkan kata pemicu" else "Jeda kata pemicu",
+                    modifier = Modifier.size(15.dp),
+                    tint = if (isDark) Lavender400 else Gray400
+                )
+            }
+        }
     }
 }
 

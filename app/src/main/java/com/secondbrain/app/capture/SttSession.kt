@@ -30,7 +30,7 @@ class SttSession(private val context: Context) {
     private var onFinal: ((String) -> Unit)? = null
     private var finished = false
 
-    fun start(onPhase: (Phase) -> Unit, onFinal: (String) -> Unit) {
+    fun start(preferOffline: Boolean = false, onPhase: (Phase) -> Unit, onFinal: (String) -> Unit) {
         releaseInternal()                 // lepas mic sesi sebelumnya dulu (serial)
         this.onPhase = onPhase
         this.onFinal = onFinal
@@ -66,6 +66,8 @@ class SttSession(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID")
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            // Mode kata pemicu mendengar terus — jangan alirkan audio ke cloud bila bisa on-device.
+            if (preferOffline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
         runCatching { r.startListening(intent) }.onFailure { finish("") }
     }

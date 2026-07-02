@@ -22,8 +22,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.secondbrain.app.ai.AIProviderType
 import com.secondbrain.app.ai.PromptTemplates
+import com.secondbrain.app.capture.SttSession
+import com.secondbrain.app.capture.VoiceTriggerController
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
@@ -91,6 +96,46 @@ fun SettingsScreen(
             }.onSuccess { snackbar.showSnackbar("Berhasil impor $it catatan") }
              .onFailure { snackbar.showSnackbar("Gagal impor: ${it.message}") }
         }
+    }
+
+    // ----- Kata pemicu suara -----
+    var vtEnabled by remember { mutableStateOf(prefs.isVoiceTriggerEnabled()) }
+    var vtWord by remember { mutableStateOf(prefs.getVoiceTriggerWord()) }
+    var vtPlaceholder by remember { mutableStateOf(prefs.getVoiceTriggerPlaceholder()) }
+    var vtSaved by remember { mutableStateOf(false) }
+    var vtError by remember { mutableStateOf<String?>(null) }
+    var vtTesting by remember { mutableStateOf(false) }
+    var vtTestTranscript by remember { mutableStateOf<String?>(null) }
+    var vtTestDetected by remember { mutableStateOf<Boolean?>(null) }
+    val vtSession = remember { SttSession(context) }
+    DisposableEffect(Unit) { onDispose { vtSession.destroy() } }
+
+    fun startTriggerTest() {
+        vtTesting = true
+        vtTestTranscript = ""
+        vtTestDetected = null
+        vtSession.start(
+            preferOffline = true,
+            onPhase = { phase ->
+                if (phase is SttSession.Phase.Listening) vtTestTranscript = phase.partial
+            },
+            onFinal = { text ->
+                vtTesting = false
+                vtTestTranscript = text
+                vtTestDetected = VoiceTriggerController.matchTrigger(text, vtWord) != null
+            }
+        )
+    }
+
+    val micPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) startTriggerTest() }
+
+    fun requestTriggerTest() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) startTriggerTest()
+        else micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     // Custom prompt: tampilkan default sebagai titik awal bila belum pernah diubah
@@ -234,6 +279,139 @@ fun SettingsScreen(
                         scope.launch { snackbar.showSnackbar("Pengingat $h jam sebelum") }
                     }
                 )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ----- Kata pemicu suara -----
+            GlassCard {
+                SectionLabel("kata pemicu suara", modifier = Modifier.padding(bottom = 8.dp))
+                Text(
+                    "Saat layar Catatan baru terbuka, app terus mendengarkan (mic hanya aktif selama " +
+                    "layar itu terbuka). Ucapan biasa diabaikan; kalimat yang DIAWALI kata pemicu " +
+                    "langsung ditulis ke catatan — mis. \"${vtWord.ifBlank { "Jarvis" }}, ingatkan saya 10 menit lagi\". " +
+                    "Setelah terpicu, mode dikte terbuka: ucapan berikutnya langsung masuk sampai hening " +
+                    "±10 detik atau tombol Selesai. Catatan: di sebagian HP tiap siklus dengar berbunyi " +
+                    "\"ding\" dan baterai lebih boros.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Aktifkan kata pemicu",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDark) Lavender50 else Lavender800,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = vtEnabled,
+                        onCheckedChange = {
+                            vtEnabled = it
+                            prefs.setVoiceTriggerEnabled(it)
+                        },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Lavender600)
+                    )
+                }
+                if (vtEnabled) {
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = vtWord,
+                        onValueChange = { vtWord = it; vtSaved = false; vtError = null },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Kata pemicu") },
+                        placeholder = { Text(PrefsManager.DEFAULT_VOICE_TRIGGER_WORD) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = settingsFieldColors(isDark)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = vtPlaceholder,
+                        onValueChange = { vtPlaceholder = it; vtSaved = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Teks pengganti kata pemicu (opsional)") },
+                        placeholder = { Text("mis. AI,") },
+                        supportingText = {
+                            Text(
+                                "Kosongkan agar kata pemicu dibuang. Diisi \"AI,\" → tersimpan \"AI, ingatkan saya…\".",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDark) Lavender400 else Gray400
+                            )
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = settingsFieldColors(isDark)
+                    )
+                    vtError?.let {
+                        Spacer(Modifier.height(6.dp))
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = Rose600)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GlassButton(
+                            text = if (vtSaved) "Tersimpan" else "Simpan",
+                            icon = if (vtSaved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
+                            onClick = {
+                                if (vtWord.isBlank()) {
+                                    vtError = "Kata pemicu tidak boleh kosong."
+                                } else {
+                                    prefs.saveVoiceTriggerWord(vtWord.trim())
+                                    prefs.saveVoiceTriggerPlaceholder(vtPlaceholder.trim())
+                                    vtSaved = true
+                                    vtError = null
+                                }
+                            },
+                            accent = !vtSaved,
+                            modifier = Modifier.weight(1f)
+                        )
+                        GlassButton(
+                            text = if (vtTesting) "Bicara…" else "Uji kata pemicu",
+                            icon = Icons.Outlined.Mic,
+                            onClick = { if (!vtTesting) requestTriggerTest() },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    // Hasil uji: transkrip mentah + status terdeteksi, supaya user tahu
+                    // kata pilihannya konsisten dikenali STT sebelum diandalkan.
+                    if (vtTesting || vtTestTranscript != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(if (isDark) GlassDark else GlassLight, RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            when {
+                                vtTesting -> Icon(Icons.Outlined.Mic, null, modifier = Modifier.size(16.dp), tint = Peach600)
+                                vtTestDetected == true -> Icon(Icons.Outlined.CheckCircle, null, modifier = Modifier.size(16.dp), tint = Sky600)
+                                else -> Icon(Icons.Outlined.Cancel, null, modifier = Modifier.size(16.dp), tint = Rose600)
+                            }
+                            Column {
+                                Text(
+                                    when {
+                                        vtTesting -> "Ucapkan: \"${vtWord.ifBlank { "kata pemicu" }}, …\""
+                                        vtTestDetected == true -> "Terdeteksi!"
+                                        else -> "Tidak terdeteksi — coba kata lain yang lebih mudah dikenali."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isDark) Lavender50 else Lavender800
+                                )
+                                val heard = vtTestTranscript.orEmpty()
+                                if (heard.isNotBlank()) {
+                                    Text(
+                                        "Terdengar: \"$heard\"",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (isDark) Lavender400 else Gray600
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -493,6 +671,18 @@ private fun FlowChips(
         }
     }
 }
+
+@Composable
+private fun settingsFieldColors(isDark: Boolean) = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = Lavender400,
+    unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
+    focusedContainerColor = if (isDark) GlassDark else GlassLight,
+    unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
+    focusedTextColor = if (isDark) Lavender50 else Lavender800,
+    unfocusedTextColor = if (isDark) Lavender50 else Lavender800,
+    focusedLabelColor = Lavender600,
+    unfocusedLabelColor = if (isDark) Lavender400 else Gray400
+)
 
 @Composable
 private fun NavRow(

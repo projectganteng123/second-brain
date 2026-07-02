@@ -58,10 +58,28 @@ class PrefsManager(context: Context) {
     }
     fun getDefaultTemplateId(): String? = prefs.getString(KEY_DEFAULT_TEMPLATE, null)
 
+    // ---- Kata pemicu suara (voice trigger) di layar input ----
+
+    fun setVoiceTriggerEnabled(enabled: Boolean) = prefs.edit { putBoolean(KEY_VOICE_TRIGGER_ENABLED, enabled) }
+    fun isVoiceTriggerEnabled(): Boolean = prefs.getBoolean(KEY_VOICE_TRIGGER_ENABLED, false)
+
+    fun saveVoiceTriggerWord(word: String) = prefs.edit { putString(KEY_VOICE_TRIGGER_WORD, word) }
+    fun getVoiceTriggerWord(): String =
+        prefs.getString(KEY_VOICE_TRIGGER_WORD, DEFAULT_VOICE_TRIGGER_WORD)
+            ?.ifBlank { DEFAULT_VOICE_TRIGGER_WORD } ?: DEFAULT_VOICE_TRIGGER_WORD
+
+    /** Teks pengganti kata pemicu di catatan. Kosong = kata pemicu dibuang. */
+    fun saveVoiceTriggerPlaceholder(text: String) = prefs.edit { putString(KEY_VOICE_TRIGGER_PLACEHOLDER, text) }
+    fun getVoiceTriggerPlaceholder(): String = prefs.getString(KEY_VOICE_TRIGGER_PLACEHOLDER, "") ?: ""
+
     companion object {
         private const val KEY_REMINDER_OFFSET = "reminder_offset_hours"
         private const val KEY_CUSTOM_PROMPT = "custom_extraction_prompt"
         private const val KEY_DEFAULT_TEMPLATE = "default_template_id"
+        private const val KEY_VOICE_TRIGGER_ENABLED = "voice_trigger_enabled"
+        private const val KEY_VOICE_TRIGGER_WORD = "voice_trigger_word"
+        private const val KEY_VOICE_TRIGGER_PLACEHOLDER = "voice_trigger_placeholder"
+        const val DEFAULT_VOICE_TRIGGER_WORD = "Jarvis"
 
         /** Urutan pemakaian bila lebih dari satu provider dicentang. */
         val PROVIDER_PRIORITY = listOf(
