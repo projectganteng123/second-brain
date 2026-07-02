@@ -13,14 +13,33 @@ android {
         applicationId = "com.secondbrain.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI menaikkan versionCode otomatis via -PversionCode=<github run number> agar
+        // APK baru selalu dianggap update (bukan downgrade) oleh Android.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 2
+        versionName = "1.1.0"
+    }
+
+    signingConfigs {
+        // Keystore TETAP yang di-commit ke repo: semua build (lokal & CI) menghasilkan
+        // tanda tangan yang sama, sehingga install APK baru meng-UPDATE app lama tanpa
+        // bentrok dan tanpa kehilangan data. Jangan ganti/regenerasi file ini.
+        create("shared") {
+            storeFile = rootProject.file("keystore/debug.p12")
+            storeType = "pkcs12"
+            storePassword = "secondbrain"
+            keyAlias = "secondbrain"
+            keyPassword = "secondbrain"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
 

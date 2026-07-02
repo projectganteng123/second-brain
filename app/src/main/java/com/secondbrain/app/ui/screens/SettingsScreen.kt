@@ -77,6 +77,21 @@ fun SettingsScreen(
              .onFailure { snackbar.showSnackbar("Gagal ekspor: ${it.message}") }
         }
     }
+    val importJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            runCatching {
+                val json = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.readText()
+                    ?: throw RuntimeException("File tidak bisa dibaca")
+                val count = repo.importJson(json, prefs.getReminderOffsetHours())
+                runCatching { com.secondbrain.app.notification.ReminderScheduler.scheduleUpcoming(context) }
+                count
+            }.onSuccess { snackbar.showSnackbar("Berhasil impor $it catatan") }
+             .onFailure { snackbar.showSnackbar("Gagal impor: ${it.message}") }
+        }
+    }
 
     // Custom prompt: tampilkan default sebagai titik awal bila belum pernah diubah
     var promptText by remember {
@@ -223,11 +238,15 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // ----- Export -----
+            // ----- Cadangkan & pulihkan -----
             GlassCard {
-                SectionLabel("ekspor data", modifier = Modifier.padding(bottom = 8.dp))
+                SectionLabel("cadangkan & pulihkan", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Cadangkan semua catatan ke file. JSON paling lengkap; CSV mudah dibuka di spreadsheet.",
+                    "Ekspor menyimpan semua catatan ke file — di jendela penyimpanan, pilih Google Drive " +
+                    "agar cadangan langsung tersimpan di Drive. Impor mengembalikan catatan dari file " +
+                    "cadangan JSON (catatan dengan ID sama akan ditimpa, sisanya digabung). " +
+                    "Selain itu, Android mencadangkan database & pengaturan secara otomatis ke Google Drive " +
+                    "(Auto Backup) dan memulihkannya saat app di-install ulang di akun yang sama.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
@@ -235,7 +254,7 @@ fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassButton(
                         text = "Ekspor JSON",
-                        icon = Icons.Outlined.Code,
+                        icon = Icons.Outlined.CloudUpload,
                         onClick = { exportJsonLauncher.launch("secondbrain-backup.json") },
                         modifier = Modifier.weight(1f)
                     )
@@ -246,6 +265,13 @@ fun SettingsScreen(
                         modifier = Modifier.weight(1f)
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+                GlassButton(
+                    text = "Impor JSON (pulihkan cadangan)",
+                    icon = Icons.Outlined.CloudDownload,
+                    onClick = { importJsonLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             Spacer(Modifier.height(12.dp))

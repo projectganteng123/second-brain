@@ -34,19 +34,83 @@ class GuidedCaptureController {
     var highlightStart by mutableStateOf<Int?>(null)
         private set
 
+    // ---- Riwayat undo/redo ----
+    private data class Snapshot(val value: TextFieldValue, val blocks: List<CaptureBlock>)
+
+    private val undoStack = ArrayDeque<Snapshot>()
+    private val redoStack = ArrayDeque<Snapshot>()
+    private var lastTypingEditAt = 0L
+
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
+    /** Simpan keadaan SEBELUM perubahan. Ketikan beruntun (<700ms antar edit) digabung jadi satu langkah undo. */
+    private fun pushHistory(typing: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val coalesce = typing && (now - lastTypingEditAt) < 700 && undoStack.isNotEmpty()
+        if (typing) lastTypingEditAt = now else lastTypingEditAt = 0L
+        if (!coalesce) {
+            undoStack.addLast(Snapshot(value, blocks))
+            if (undoStack.size > 100) undoStack.removeFirst()
+        }
+        redoStack.clear()
+        refreshHistoryFlags()
+    }
+
+    private fun refreshHistoryFlags() {
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+    }
+
+    fun undo() {
+        val s = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(Snapshot(value, blocks))
+        value = s.value
+        blocks = s.blocks
+        highlightStart = null
+        lastTypingEditAt = 0L
+        refreshHistoryFlags()
+    }
+
+    fun redo() {
+        val s = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(Snapshot(value, blocks))
+        value = s.value
+        blocks = s.blocks
+        highlightStart = null
+        lastTypingEditAt = 0L
+        refreshHistoryFlags()
+    }
+
     /** Edit manual oleh user: geser/putuskan blok mengikuti perubahan teks. */
     fun onValueChange(new: TextFieldValue) {
         if (new.text != value.text) {
+            pushHistory(typing = true)
             blocks = adjustBlocks(value.text, new.text, blocks)
         }
         value = new
     }
 
-    /** Reset penuh (mis. setelah simpan). */
+    /** Kosongkan teks (bisa di-undo). */
+    fun clearText() {
+        if (value.text.isEmpty()) return
+        pushHistory()
+        value = TextFieldValue("")
+        blocks = emptyList()
+        highlightStart = null
+    }
+
+    /** Reset penuh termasuk riwayat (mis. setelah simpan). */
     fun clear() {
         value = TextFieldValue("")
         blocks = emptyList()
         highlightStart = null
+        undoStack.clear()
+        redoStack.clear()
+        lastTypingEditAt = 0L
+        refreshHistoryFlags()
     }
 
     fun setHighlight(start: Int?) { highlightStart = start }
@@ -60,6 +124,7 @@ class GuidedCaptureController {
 
     /** Sisipkan blok berlabel pada posisi kursor. Pengaman 1: kursor lompat ke ruang kosong setelah blok. */
     fun insertLabeledBlock(label: String, answer: String) {
+        pushHistory()
         val text = value.text
         val pos = value.selection.start.coerceIn(0, text.length)
         val needLead = pos > 0 && text[pos - 1] != ' ' && text[pos - 1] != '\n'
@@ -85,6 +150,7 @@ class GuidedCaptureController {
 
     /** Ganti isi sebuah blok. Jika answer kosong → hapus blok (jadi kosong). */
     fun replaceBlock(block: CaptureBlock, label: String, answer: String) {
+        pushHistory()
         val text = value.text
         val safeStart = block.start.coerceIn(0, text.length)
         val safeEnd = block.end.coerceIn(safeStart, text.length)
@@ -117,9 +183,10 @@ class GuidedCaptureController {
         highlightStart = null
     }
 
-    /** Tambah teks bebas (mic besar tanpa template) di posisi kursor. */
+    /** Tambah teks bebas (mic bebas, tempel clipboard, penanda lampiran) di posisi kursor. */
     fun appendPlain(extra: String) {
         if (extra.isBlank()) return
+        pushHistory()
         val text = value.text
         val pos = value.selection.start.coerceIn(0, text.length)
         val needLead = pos > 0 && text[pos - 1] != ' ' && text[pos - 1] != '\n'

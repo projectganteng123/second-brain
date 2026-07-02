@@ -162,6 +162,12 @@ fun NoteDetailScreen(
 
             Spacer(Modifier.height(10.dp))
 
+            // Lampiran (foto tampil inline; video/file/link diketuk untuk dibuka)
+            if (note.attachmentsJson.isNotBlank()) {
+                AttachmentSection(note.attachmentsJson, isDark)
+                Spacer(Modifier.height(10.dp))
+            }
+
             // Metadata
             if (meta != null) {
                 GlassCard {

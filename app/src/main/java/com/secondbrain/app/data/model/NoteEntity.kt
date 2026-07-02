@@ -16,5 +16,7 @@ data class NoteEntity(
     val source: String = "text",
     val isPendingExtraction: Boolean = false,
     /** User mengaktifkan pengingat sebagai alarm (suara + full-screen), bukan sekadar notifikasi. */
-    val useAlarm: Boolean = false
+    val useAlarm: Boolean = false,
+    /** JSON List<Attachment>; kosong = tidak ada lampiran. */
+    val attachmentsJson: String = ""
 )

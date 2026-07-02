@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Path yang boleh dibagikan lewat FileProvider (kamera menulis foto, app lain membaca lampiran) -->
+<paths>
+    <files-path name="attachments" path="attachments/" />
+</paths>

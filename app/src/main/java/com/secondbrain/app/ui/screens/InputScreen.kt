@@ -3,6 +3,7 @@ package com.secondbrain.app.ui.screens
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
@@ -20,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -30,11 +33,14 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.capture.*
+import com.secondbrain.app.data.model.Attachment
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
+import com.secondbrain.app.util.AttachmentStore
 import com.secondbrain.app.util.PrefsManager
 import com.secondbrain.app.viewmodel.InputUiState
 import com.secondbrain.app.viewmodel.InputViewModel
+import java.io.File
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -134,6 +140,34 @@ fun InputScreen(
             onSaved()
             vm.reset()
         }
+    }
+
+    // ----- Lampiran & alat edit teks -----
+    val clipboard = LocalClipboardManager.current
+    val attachments by vm.attachments.collectAsState()
+    var showClearDialog by remember { mutableStateOf(false) }
+    var showLinkDialog by remember { mutableStateOf(false) }
+    var linkText by remember { mutableStateOf("") }
+    var pendingCameraFile by remember { mutableStateOf<File?>(null) }
+
+    fun addAttachment(att: Attachment) {
+        vm.addAttachment(att)
+        // Hanya teks penanda yang masuk ke catatan (dan dikirim ke AI) — file tidak.
+        controller.appendPlain(AttachmentStore.markerFor(att))
+        vm.updateText(controller.value.text)
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingCameraFile
+        pendingCameraFile = null
+        if (ok && f != null && f.exists()) addAttachment(AttachmentStore.imageAttachment(f))
+        else f?.delete()
+    }
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { AttachmentStore.copyIntoStore(context, it)?.let(::addAttachment) }
+    }
+    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { AttachmentStore.copyIntoStore(context, it)?.let(::addAttachment) }
     }
 
     val labelColor = if (isDark) Lavender200 else Lavender600
@@ -248,7 +282,50 @@ fun InputScreen(
                         modifier = Modifier.size(20.dp))
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(2.dp))
+
+            // ----- Toolbar: alat edit + lampiran (ikon saja) -----
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ToolIcon(Icons.Outlined.ContentPaste, "Tempel dari clipboard", isDark) {
+                    clipboard.getText()?.text?.let {
+                        if (it.isNotBlank()) {
+                            controller.appendPlain(it)
+                            vm.updateText(controller.value.text)
+                        }
+                    }
+                }
+                ToolIcon(Icons.Outlined.Undo, "Urungkan", isDark, enabled = controller.canUndo) {
+                    controller.undo(); vm.updateText(controller.value.text)
+                }
+                ToolIcon(Icons.Outlined.Redo, "Ulangi", isDark, enabled = controller.canRedo) {
+                    controller.redo(); vm.updateText(controller.value.text)
+                }
+                ToolIcon(Icons.Outlined.DeleteSweep, "Hapus semua", isDark,
+                    enabled = controller.value.text.isNotEmpty() || attachments.isNotEmpty()) {
+                    showClearDialog = true
+                }
+                Spacer(Modifier.weight(1f))
+                ToolIcon(Icons.Outlined.PhotoCamera, "Lampirkan dari kamera", isDark) {
+                    val f = AttachmentStore.newImageFile(context)
+                    pendingCameraFile = f
+                    cameraLauncher.launch(AttachmentStore.contentUri(context, f))
+                }
+                ToolIcon(Icons.Outlined.Image, "Lampirkan dari galeri", isDark) {
+                    galleryLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    )
+                }
+                ToolIcon(Icons.Outlined.AttachFile, "Lampirkan file", isDark) {
+                    fileLauncher.launch(arrayOf("*/*"))
+                }
+                ToolIcon(Icons.Outlined.Link, "Lampirkan link", isDark) {
+                    linkText = ""; showLinkDialog = true
+                }
+            }
+            Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = controller.value,
                 onValueChange = { controller.onValueChange(it); vm.updateText(it.text) },
@@ -271,6 +348,45 @@ fun InputScreen(
             Spacer(Modifier.height(4.dp))
             Text("${controller.value.text.length} karakter",
                 style = MaterialTheme.typography.labelSmall, color = if (isDark) Lavender400 else Gray400)
+
+            // ----- Daftar lampiran -----
+            if (attachments.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    attachments.forEach { att ->
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isDark) GlassDark else GlassLight)
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                attachmentIcon(att.type), null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (isDark) Lavender200 else Lavender600
+                            )
+                            Text(
+                                att.name.ifBlank { att.path }.take(24),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDark) Lavender50 else Lavender800
+                            )
+                            Icon(
+                                Icons.Outlined.Close, "Hapus lampiran",
+                                modifier = Modifier.size(14.dp).clickable {
+                                    AttachmentStore.deleteFile(context, att)
+                                    vm.removeAttachment(att)
+                                },
+                                tint = if (isDark) Lavender400 else Gray400
+                            )
+                        }
+                    }
+                }
+            }
 
             Spacer(Modifier.height(12.dp))
 
@@ -301,6 +417,83 @@ fun InputScreen(
             Spacer(Modifier.height(40.dp))
         }
     }
+
+    // ----- Dialog hapus semua -----
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Hapus semua?") },
+            text = { Text("Teks catatan dan daftar lampiran akan dikosongkan. Teks masih bisa dikembalikan dengan tombol Urungkan; file lampiran ikut terhapus.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    attachments.forEach { AttachmentStore.deleteFile(context, it) }
+                    vm.clearAttachments()
+                    controller.clearText()
+                    vm.updateText("")
+                    showClearDialog = false
+                }) { Text("Hapus", color = Rose600) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    // ----- Dialog tambah link -----
+    if (showLinkDialog) {
+        AlertDialog(
+            onDismissRequest = { showLinkDialog = false },
+            title = { Text("Lampirkan link") },
+            text = {
+                OutlinedTextField(
+                    value = linkText,
+                    onValueChange = { linkText = it },
+                    label = { Text("URL") },
+                    placeholder = { Text("https://…") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = linkText.isNotBlank(),
+                    onClick = {
+                        val url = linkText.trim()
+                        addAttachment(Attachment(Attachment.TYPE_LINK, url, url))
+                        showLinkDialog = false
+                    }
+                ) { Text("Tambah") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLinkDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ToolIcon(
+    icon: ImageVector,
+    desc: String,
+    isDark: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(36.dp)) {
+        Icon(
+            icon, desc,
+            modifier = Modifier.size(18.dp),
+            tint = if (enabled) (if (isDark) Lavender200 else Lavender600)
+                   else (if (isDark) Lavender400.copy(0.35f) else Gray400.copy(0.5f))
+        )
+    }
+}
+
+internal fun attachmentIcon(type: String): ImageVector = when (type) {
+    Attachment.TYPE_IMAGE -> Icons.Outlined.Image
+    Attachment.TYPE_VIDEO -> Icons.Outlined.Videocam
+    Attachment.TYPE_LINK -> Icons.Outlined.Link
+    else -> Icons.Outlined.InsertDriveFile
 }
 
 @Composable

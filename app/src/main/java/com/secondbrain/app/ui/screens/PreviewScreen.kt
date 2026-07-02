@@ -315,19 +315,24 @@ private fun MetadataEditor(
     isDark: Boolean,
     onChange: (Metadata) -> Unit
 ) {
-    // recurrenceDates sebagai teks dipisah koma
-    var datesText by remember(metadata.recurrenceDates) {
-        mutableStateOf(metadata.recurrenceDates.joinToString(", "))
-    }
-
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedBorderColor = Lavender400,
         unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
         focusedContainerColor = if (isDark) GlassDark else GlassLight,
         unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
         focusedTextColor = if (isDark) Lavender50 else Lavender800,
-        unfocusedTextColor = if (isDark) Lavender50 else Lavender800
+        unfocusedTextColor = if (isDark) Lavender50 else Lavender800,
+        focusedLabelColor = Lavender600,
+        unfocusedLabelColor = if (isDark) Lavender400 else Gray400
     )
+    val fieldShape = RoundedCornerShape(12.dp)
+    fun splitComma(s: String) = s.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+    // Teks lokal untuk field yang diketik bebas (dipisah koma), agar kursor tidak lompat
+    var locationsText by remember { mutableStateOf(metadata.locations.joinToString(", ") { it.value }) }
+    var peopleText by remember { mutableStateOf(metadata.entities.people.joinToString(", ")) }
+    var orgsText by remember { mutableStateOf(metadata.entities.organizations.joinToString(", ")) }
+    var keywordsText by remember { mutableStateOf(metadata.keywords.joinToString(", ")) }
 
     GlassCard {
         SectionLabel("edit manual", modifier = Modifier.padding(bottom = 8.dp))
@@ -338,7 +343,7 @@ private fun MetadataEditor(
             label = { Text("Judul") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            shape = fieldShape,
             colors = fieldColors
         )
 
@@ -371,63 +376,185 @@ private fun MetadataEditor(
             }
         }
 
+        // ----- Jam mulai/selesai: picker jam -----
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = metadata.startTime ?: "",
-                onValueChange = { onChange(metadata.copy(startTime = it.ifBlank { null })) },
-                label = { Text("Mulai (HH:mm)") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                colors = fieldColors
+            TimeField(
+                label = "Jam mulai",
+                value = metadata.startTime,
+                onChange = { onChange(metadata.copy(startTime = it)) },
+                isDark = isDark,
+                modifier = Modifier.weight(1f)
             )
-            OutlinedTextField(
-                value = metadata.endTime ?: "",
-                onValueChange = { onChange(metadata.copy(endTime = it.ifBlank { null })) },
-                label = { Text("Selesai (HH:mm)") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                colors = fieldColors
+            TimeField(
+                label = "Jam selesai",
+                value = metadata.endTime,
+                onChange = { onChange(metadata.copy(endTime = it)) },
+                isDark = isDark,
+                modifier = Modifier.weight(1f)
             )
         }
 
+        // ----- Tanggal: kalender multi-tanggal -----
+        Spacer(Modifier.height(10.dp))
+        MultiDateField(
+            label = "Tanggal",
+            dates = metadata.recurrenceDates,
+            onChange = { onChange(metadata.copy(recurrenceDates = it)) },
+            isDark = isDark
+        )
+
+        // ----- Waktu persiapan: kalender + jam -----
+        Spacer(Modifier.height(10.dp))
+        DateTimeField(
+            label = "Pengingat persiapan (opsional)",
+            value = metadata.preparationTime,
+            onChange = { onChange(metadata.copy(preparationTime = it)) },
+            isDark = isDark,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        // ----- Lokasi, orang, organisasi, keywords -----
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            value = datesText,
-            onValueChange = { text ->
-                datesText = text
-                val parsed = text.split(",").map { it.trim() }.filter { it.isNotBlank() }
-                onChange(metadata.copy(recurrenceDates = parsed))
+            value = locationsText,
+            onValueChange = {
+                locationsText = it
+                onChange(metadata.copy(locations = splitComma(it).map { v -> LocationEntry(value = v) }))
             },
-            label = { Text("Tanggal (YYYY-MM-DD, pisah koma)") },
+            label = { Text("Lokasi (pisah koma)") },
+            singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            shape = fieldShape,
             colors = fieldColors
-        )
-        Text(
-            "Contoh: 2026-06-20, 2026-06-27",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isDark) Lavender400 else Gray400,
-            modifier = Modifier.padding(top = 2.dp)
         )
 
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            value = metadata.preparationTime ?: "",
-            onValueChange = { onChange(metadata.copy(preparationTime = it.ifBlank { null })) },
-            label = { Text("Waktu persiapan (YYYY-MM-DDTHH:mm)") },
+            value = peopleText,
+            onValueChange = {
+                peopleText = it
+                onChange(metadata.copy(entities = metadata.entities.copy(people = splitComma(it))))
+            },
+            label = { Text("Orang (pisah koma)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            shape = fieldShape,
             colors = fieldColors
         )
-        Text(
-            "Pengingat persiapan. Contoh: 2026-06-23T19:00 (kosongkan jika tak perlu)",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isDark) Lavender400 else Gray400,
-            modifier = Modifier.padding(top = 2.dp)
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = orgsText,
+            onValueChange = {
+                orgsText = it
+                onChange(metadata.copy(entities = metadata.entities.copy(organizations = splitComma(it))))
+            },
+            label = { Text("Organisasi (pisah koma)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = fieldShape,
+            colors = fieldColors
+        )
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = keywordsText,
+            onValueChange = {
+                keywordsText = it
+                onChange(metadata.copy(keywords = splitComma(it)))
+            },
+            label = { Text("Keywords (pisah koma)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = fieldShape,
+            colors = fieldColors
+        )
+
+        // ----- Ringkasan -----
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = metadata.summary,
+            onValueChange = { onChange(metadata.copy(summary = it)) },
+            label = { Text("Ringkasan") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+            shape = fieldShape,
+            colors = fieldColors
+        )
+
+        // ----- Action items -----
+        Spacer(Modifier.height(10.dp))
+        Text("Action items", style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) Lavender400 else Gray600)
+        Spacer(Modifier.height(4.dp))
+        metadata.actions.forEachIndexed { i, act ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isDark) GlassDark else GlassLight)
+                    .padding(10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = act.action,
+                        onValueChange = { v ->
+                            onChange(metadata.copy(
+                                actions = metadata.actions.toMutableList().also { it[i] = act.copy(action = v) }
+                            ))
+                        },
+                        label = { Text("Aksi ${i + 1}") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = fieldShape,
+                        colors = fieldColors
+                    )
+                    IconButton(onClick = {
+                        onChange(metadata.copy(
+                            actions = metadata.actions.toMutableList().also { it.removeAt(i) }
+                        ))
+                    }) {
+                        Icon(Icons.Outlined.DeleteOutline, "Hapus aksi", tint = Rose600,
+                            modifier = Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = act.owner ?: "",
+                        onValueChange = { v ->
+                            onChange(metadata.copy(
+                                actions = metadata.actions.toMutableList()
+                                    .also { it[i] = act.copy(owner = v.ifBlank { null }) }
+                            ))
+                        },
+                        label = { Text("Penanggung jawab") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        shape = fieldShape,
+                        colors = fieldColors
+                    )
+                    DateField(
+                        label = "Deadline",
+                        value = act.deadline,
+                        onChange = { v ->
+                            onChange(metadata.copy(
+                                actions = metadata.actions.toMutableList()
+                                    .also { it[i] = act.copy(deadline = v) }
+                            ))
+                        },
+                        isDark = isDark,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+        }
+        GlassButton(
+            text = "Tambah aksi",
+            icon = Icons.Outlined.Add,
+            onClick = { onChange(metadata.copy(actions = metadata.actions + ActionItem())) },
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

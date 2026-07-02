@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Auto Backup (Android 11 ke bawah, kuota cloud 25MB): database & preferensi ikut tercadang
+     otomatis ke Google Drive; folder lampiran dikecualikan agar tidak melampaui kuota.
+     Untuk lampiran, pakai Ekspor/Impor manual di Pengaturan. -->
+<full-backup-content>
+    <exclude domain="file" path="attachments" />
+</full-backup-content>

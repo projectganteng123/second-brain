@@ -29,7 +29,8 @@ class NoteRepository(
         status: NoteStatus? = null,
         source: InputSource = InputSource.TEXT,
         offsetHours: Int = 24,
-        useAlarm: Boolean = false
+        useAlarm: Boolean = false,
+        attachments: List<Attachment> = emptyList()
     ): Long {
         val metaJson = gson.toJson(metadata)
         val entity = NoteEntity(
@@ -38,19 +39,25 @@ class NoteRepository(
             prioritas = prioritas?.name,
             status = status?.name,
             source = source.name.lowercase(),
-            useAlarm = useAlarm
+            useAlarm = useAlarm,
+            attachmentsJson = Attachment.listToJson(attachments)
         )
         val id = noteDao.insert(entity)
-        DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}, alarm=$useAlarm\nmetadata=$metaJson")
+        DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}, alarm=$useAlarm, lampiran=${attachments.size}\nmetadata=$metaJson")
         generateReminders(id, metadata, offsetHours, useAlarm)
         return id
     }
 
-    suspend fun savePending(rawText: String, source: InputSource): Long {
+    suspend fun savePending(
+        rawText: String,
+        source: InputSource,
+        attachments: List<Attachment> = emptyList()
+    ): Long {
         val entity = NoteEntity(
             rawText = rawText,
             source = source.name.lowercase(),
-            isPendingExtraction = true
+            isPendingExtraction = true,
+            attachmentsJson = Attachment.listToJson(attachments)
         )
         return noteDao.insert(entity)
     }
@@ -85,6 +92,31 @@ class NoteRepository(
     suspend fun exportJson(): String {
         val notes = noteDao.getAllOnce()
         return gson.toJson(notes)
+    }
+
+    /**
+     * Impor hasil ekspor JSON (List<NoteEntity>). Catatan dengan id yang sama akan DITIMPA
+     * (restore), selebihnya digabung. Reminder dibuat ulang untuk catatan aktif yang
+     * jadwalnya masih di masa depan. Mengembalikan jumlah catatan yang diimpor.
+     */
+    suspend fun importJson(json: String, offsetHours: Int = 24): Int {
+        val type = object : com.google.gson.reflect.TypeToken<List<NoteEntity>>() {}.type
+        val notes: List<NoteEntity> = gson.fromJson(json, type)
+            ?: throw RuntimeException("File tidak berisi data catatan yang valid.")
+        var count = 0
+        for (n in notes) {
+            noteDao.insert(n)
+            count++
+            if (!n.isArchived) {
+                val meta = metadataFrom(n)
+                if (meta != null) {
+                    reminderDao.deleteByNote(n.id)
+                    generateReminders(n.id, meta, offsetHours, n.useAlarm)
+                }
+            }
+        }
+        DebugLog.log("DB ✓ impor", "$count catatan diimpor dari JSON")
+        return count
     }
 
     suspend fun exportCsv(): String {

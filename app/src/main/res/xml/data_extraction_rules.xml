@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: backup cloud (Google Drive) mengecualikan folder lampiran (kuota 25MB);
+     transfer antar perangkat (kabel/d2d) membawa SEMUA data termasuk lampiran. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="attachments" />
+    </cloud-backup>
+    <device-transfer />
+</data-extraction-rules>

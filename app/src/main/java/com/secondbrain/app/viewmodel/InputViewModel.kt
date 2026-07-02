@@ -42,6 +42,13 @@ class InputViewModel(
     private val _useAlarm = MutableStateFlow(false)
     val useAlarm: StateFlow<Boolean> = _useAlarm.asStateFlow()
 
+    private val _attachments = MutableStateFlow<List<Attachment>>(emptyList())
+    val attachments: StateFlow<List<Attachment>> = _attachments.asStateFlow()
+
+    fun addAttachment(a: Attachment) { _attachments.value = _attachments.value + a }
+    fun removeAttachment(a: Attachment) { _attachments.value = _attachments.value - a }
+    fun clearAttachments() { _attachments.value = emptyList() }
+
     // Apakah user sudah mengubah prioritas/status manual (agar rekomendasi AI tidak menimpa pilihan user)
     private var userTouchedPrioritas = false
     private var userTouchedStatus = false
@@ -92,7 +99,8 @@ class InputViewModel(
                     prioritas = _selectedPrioritas.value,
                     status = _selectedStatus.value,
                     offsetHours = prefs.getReminderOffsetHours(),
-                    useAlarm = _useAlarm.value
+                    useAlarm = _useAlarm.value,
+                    attachments = _attachments.value
                 )
             }.onSuccess { _uiState.value = InputUiState.Saved }
              .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal menyimpan") }
@@ -103,7 +111,7 @@ class InputViewModel(
         viewModelScope.launch {
             _uiState.value = InputUiState.Saving
             runCatching {
-                repo.savePending(_rawText.value.trim(), InputSource.TEXT)
+                repo.savePending(_rawText.value.trim(), InputSource.TEXT, _attachments.value)
             }.onSuccess { _uiState.value = InputUiState.Saved }
              .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal menyimpan") }
         }
@@ -120,6 +128,7 @@ class InputViewModel(
         _selectedPrioritas.value = null
         _selectedStatus.value = NoteStatus.BELUM_MULAI
         _useAlarm.value = false
+        _attachments.value = emptyList()
         userTouchedPrioritas = false
         userTouchedStatus = false
         _uiState.value = InputUiState.Idle
