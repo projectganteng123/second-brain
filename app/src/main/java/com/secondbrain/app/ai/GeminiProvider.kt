@@ -21,7 +21,7 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
                 DebugLog.log("AI → request", "model=${config.model}\n$prompt")
                 val responseText = callGemini(prompt, jsonOutput = true)
                 DebugLog.log("AI ← response", responseText)
-                parseMetadata(responseText)
+                MetadataParser.parse(responseText)
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
@@ -162,47 +162,12 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         }
     }
 
-    private fun parseMetadata(raw: String): Metadata {
-        var cleaned = raw.trim()
-            .removePrefix("```json").removePrefix("```")
-            .removeSuffix("```")
-            .trim()
-        // Ambil hanya blok { ... } pertama bila ada teks tambahan di sekitarnya
-        val start = cleaned.indexOf('{')
-        val end = cleaned.lastIndexOf('}')
-        if (start >= 0 && end > start) cleaned = cleaned.substring(start, end + 1)
-
-        return try {
-            gson.fromJson(cleaned, Metadata::class.java)
-                ?: throw RuntimeException("JSON kosong")
-        } catch (e: Exception) {
-            DebugLog.log("AI ✕ parse gagal", "${e.message}\n--- JSON mentah ---\n$cleaned")
-            throw RuntimeException(
-                "AI mengembalikan format yang tidak lengkap/terpotong. Coba proses ulang, " +
-                "atau persingkat catatan. (lihat panel Debug untuk detail)"
-            )
-        }
-    }
-
     private fun buildExtractionPrompt(rawText: String, currentDateTime: String): String {
         val template = config.extractionPromptTemplate?.takeIf { it.isNotBlank() }
             ?: PromptTemplates.DEFAULT_EXTRACTION
         return PromptTemplates.fill(template, currentDateTime, rawText)
     }
 
-    private fun buildQAPrompt(question: String, contextNotes: List<String>): String {
-        val context = contextNotes.mapIndexed { i, n -> "[${i + 1}] $n" }.joinToString("\n\n")
-        return """
-Kamu adalah asisten pribadi yang menjawab pertanyaan berdasarkan catatan pengguna.
-
-Pertanyaan: "$question"
-
-Catatan yang relevan:
-$context
-
-Jawab pertanyaan secara ringkas dan langsung berdasarkan catatan di atas.
-Jika informasi tidak tersedia dalam catatan, katakan dengan jelas.
-Gunakan Bahasa Indonesia.
-""".trimIndent()
-    }
+    private fun buildQAPrompt(question: String, contextNotes: List<String>): String =
+        PromptTemplates.qaPrompt(question, contextNotes)
 }

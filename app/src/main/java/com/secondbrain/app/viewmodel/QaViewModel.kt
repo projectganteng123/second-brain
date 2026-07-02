@@ -38,9 +38,8 @@ class QaViewModel(
     fun ask() {
         val q = _question.value.trim()
         if (q.isBlank()) return
-        val keys = prefs.getApiKeys()
-        if (keys.isEmpty()) {
-            _state.value = QaState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
+        if (!prefs.hasAnyActiveApiKey()) {
+            _state.value = QaState.Error("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
             return
         }
         viewModelScope.launch {
@@ -60,7 +59,7 @@ class QaViewModel(
                 QaSource(note.id, title)
             }
 
-            val service = AIService(keys, PrefsManager.ANSWER_MODELS, null)
+            val service = AIService.forAnswer(prefs)
             service.answerQuestion(q, context)
                 .onSuccess { _state.value = QaState.Answer(it, sources) }
                 .onFailure { _state.value = QaState.Error(it.message ?: "Gagal menjawab") }

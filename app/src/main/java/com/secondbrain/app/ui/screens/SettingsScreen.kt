@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,7 +20,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.secondbrain.app.ai.AIProviderType
 import com.secondbrain.app.ai.PromptTemplates
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.components.*
@@ -41,8 +44,12 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    var apiKey by remember { mutableStateOf(prefs.getApiKey()) }
-    var showKey by remember { mutableStateOf(false) }
+    var groqKeys by remember { mutableStateOf(prefs.getApiKeyText(AIProviderType.GROQ)) }
+    var cerebrasKeys by remember { mutableStateOf(prefs.getApiKeyText(AIProviderType.CEREBRAS)) }
+    var geminiKeys by remember { mutableStateOf(prefs.getApiKeyText(AIProviderType.GEMINI)) }
+    var groqEnabled by remember { mutableStateOf(prefs.isProviderEnabled(AIProviderType.GROQ)) }
+    var cerebrasEnabled by remember { mutableStateOf(prefs.isProviderEnabled(AIProviderType.CEREBRAS)) }
+    var geminiEnabled by remember { mutableStateOf(prefs.isProviderEnabled(AIProviderType.GEMINI)) }
     var saved by remember { mutableStateOf(false) }
 
     var offsetHours by remember { mutableIntStateOf(prefs.getReminderOffsetHours()) }
@@ -107,51 +114,65 @@ fun SettingsScreen(
             Spacer(Modifier.height(16.dp))
 
             GlassCard {
-                SectionLabel("Gemini API", modifier = Modifier.padding(bottom = 8.dp))
+                SectionLabel("API provider AI", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Dapatkan API key gratis di Google AI Studio (aistudio.google.com). " +
-                    "Bisa isi LEBIH DARI SATU key — satu per baris. Jika satu key kehabisan limit harian, " +
-                    "app otomatis mencoba key berikutnya.",
+                    "Isi API key minimal satu provider (semuanya punya paket gratis). " +
+                    "Boleh LEBIH DARI SATU key per provider — tulis satu key per baris; jika satu key " +
+                    "kena limit, app otomatis mencoba key berikutnya. Centang provider yang ingin dipakai. " +
+                    "Jika lebih dari satu dicentang, urutan prioritas: Groq → Cerebras → Gemini.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it; saved = false },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp),
-                    label = { Text("Gemini API Key (satu per baris)") },
-                    placeholder = { Text("AIzaSy...") },
-                    singleLine = false,
-                    visualTransformation = if (showKey) VisualTransformation.None
-                                          else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showKey = !showKey }) {
-                            Icon(
-                                if (showKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                null,
-                                tint = if (isDark) Lavender400 else Gray400
-                            )
-                        }
+                Spacer(Modifier.height(6.dp))
+                ProviderKeySection(
+                    name = "Groq",
+                    enabled = groqEnabled,
+                    onEnabledChange = {
+                        groqEnabled = it
+                        prefs.setProviderEnabled(AIProviderType.GROQ, it)
                     },
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Lavender400,
-                        unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
-                        focusedContainerColor = if (isDark) GlassDark else GlassLight,
-                        unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
-                        focusedTextColor = if (isDark) Lavender50 else Lavender800,
-                        unfocusedTextColor = if (isDark) Lavender50 else Lavender800,
-                        focusedLabelColor = Lavender600,
-                        unfocusedLabelColor = if (isDark) Lavender400 else Gray400
-                    )
+                    keyText = groqKeys,
+                    onKeyChange = { groqKeys = it; saved = false },
+                    placeholder = "gsk_...",
+                    linkUrl = "https://console.groq.com/keys",
+                    isDark = isDark
+                )
+                Spacer(Modifier.height(10.dp))
+                ProviderKeySection(
+                    name = "Cerebras",
+                    enabled = cerebrasEnabled,
+                    onEnabledChange = {
+                        cerebrasEnabled = it
+                        prefs.setProviderEnabled(AIProviderType.CEREBRAS, it)
+                    },
+                    keyText = cerebrasKeys,
+                    onKeyChange = { cerebrasKeys = it; saved = false },
+                    placeholder = "csk-...",
+                    linkUrl = "https://cloud.cerebras.ai",
+                    isDark = isDark
+                )
+                Spacer(Modifier.height(10.dp))
+                ProviderKeySection(
+                    name = "Gemini",
+                    enabled = geminiEnabled,
+                    onEnabledChange = {
+                        geminiEnabled = it
+                        prefs.setProviderEnabled(AIProviderType.GEMINI, it)
+                    },
+                    keyText = geminiKeys,
+                    onKeyChange = { geminiKeys = it; saved = false },
+                    placeholder = "AIzaSy...",
+                    linkUrl = "https://aistudio.google.com/apikey",
+                    isDark = isDark
                 )
                 Spacer(Modifier.height(10.dp))
                 GlassButton(
                     text = if (saved) "Tersimpan" else "Simpan API Key",
                     icon = if (saved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
                     onClick = {
-                        prefs.saveApiKey(apiKey.trim())
+                        prefs.saveApiKeyText(AIProviderType.GROQ, groqKeys.trim())
+                        prefs.saveApiKeyText(AIProviderType.CEREBRAS, cerebrasKeys.trim())
+                        prefs.saveApiKeyText(AIProviderType.GEMINI, geminiKeys.trim())
                         saved = true
                     },
                     accent = !saved,
@@ -166,8 +187,11 @@ fun SettingsScreen(
                 SectionLabel("model AI", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
                     "Model dipilih otomatis & gratis. Ekstraksi memakai model ringan; menjawab pertanyaan " +
-                    "memakai model lebih kuat. Jika satu model kena limit harian, app otomatis pindah ke " +
-                    "model lain pada tangga: " + PrefsManager.MODEL_LADDER.joinToString(" → "),
+                    "memakai model lebih kuat. Jika satu model/provider kena limit, app otomatis pindah ke " +
+                    "yang berikutnya.\n" +
+                    "Groq: " + PrefsManager.GROQ_MODEL_LADDER.joinToString(" → ") + "\n" +
+                    "Cerebras: " + PrefsManager.CEREBRAS_MODEL_LADDER.joinToString(" → ") + "\n" +
+                    "Gemini: " + PrefsManager.GEMINI_MODEL_LADDER.joinToString(" → "),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
@@ -336,6 +360,77 @@ fun SettingsScreen(
             Spacer(Modifier.height(40.dp))
         }
     }
+}
+
+@Composable
+private fun ProviderKeySection(
+    name: String,
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    keyText: String,
+    onKeyChange: (String) -> Unit,
+    placeholder: String,
+    linkUrl: String,
+    isDark: Boolean
+) {
+    val uriHandler = LocalUriHandler.current
+    var showKey by remember { mutableStateOf(false) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(
+            checked = enabled,
+            onCheckedChange = onEnabledChange,
+            colors = CheckboxDefaults.colors(
+                checkedColor = Lavender600,
+                uncheckedColor = if (isDark) Lavender400 else Gray400
+            )
+        )
+        Text(
+            name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDark) Lavender50 else Lavender800,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            "Ambil API key",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isDark) Lavender200 else Lavender600,
+            textDecoration = TextDecoration.Underline,
+            modifier = Modifier
+                .clickable { uriHandler.openUri(linkUrl) }
+                .padding(vertical = 6.dp)
+        )
+    }
+    OutlinedTextField(
+        value = keyText,
+        onValueChange = onKeyChange,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+        label = { Text("$name API Key (satu per baris)") },
+        placeholder = { Text(placeholder) },
+        singleLine = false,
+        visualTransformation = if (showKey) VisualTransformation.None
+                              else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { showKey = !showKey }) {
+                Icon(
+                    if (showKey) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    null,
+                    tint = if (isDark) Lavender400 else Gray400
+                )
+            }
+        },
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Lavender400,
+            unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
+            focusedContainerColor = if (isDark) GlassDark else GlassLight,
+            unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
+            focusedTextColor = if (isDark) Lavender50 else Lavender800,
+            unfocusedTextColor = if (isDark) Lavender50 else Lavender800,
+            focusedLabelColor = Lavender600,
+            unfocusedLabelColor = if (isDark) Lavender400 else Gray400
+        )
+    )
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)

@@ -91,9 +91,8 @@ class NoteDetailViewModel(
 
     fun reExtract(newRawText: String) {
         val note = _state.value.note ?: return
-        val keys = prefs.getApiKeys()
-        if (keys.isEmpty()) {
-            _state.value = _state.value.copy(message = "API key Gemini belum diatur.")
+        if (!prefs.hasAnyActiveApiKey()) {
+            _state.value = _state.value.copy(message = "API key belum diatur atau tidak ada provider yang dicentang.")
             return
         }
         viewModelScope.launch {
@@ -101,11 +100,7 @@ class NoteDetailViewModel(
             // Seluruh blok dibungkus agar error apa pun tidak menutup aplikasi
             runCatching {
                 val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-                val service = AIService(
-                    keys = keys,
-                    models = PrefsManager.EXTRACTION_MODELS,
-                    promptTemplate = prefs.getCustomPrompt().ifBlank { null }
-                )
+                val service = AIService.forExtraction(prefs)
                 val result = service.extractMetadata(newRawText, now)
                 result.onSuccess { meta ->
                     repo.update(note.copy(rawText = newRawText, updatedAt = System.currentTimeMillis()))

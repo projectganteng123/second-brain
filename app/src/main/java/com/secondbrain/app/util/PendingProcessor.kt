@@ -12,18 +12,13 @@ import java.time.format.DateTimeFormatter
 object PendingProcessor {
 
     suspend fun processAll(repo: NoteRepository, prefs: PrefsManager) {
-        val keys = prefs.getApiKeys()
-        if (keys.isEmpty()) return
+        if (!prefs.hasAnyActiveApiKey()) return
 
         val pending = repo.getPending()
         if (pending.isEmpty()) return
 
         DebugLog.log("Pending", "Memproses ${pending.size} catatan tertunda")
-        val service = AIService(
-            keys = keys,
-            models = PrefsManager.EXTRACTION_MODELS,
-            promptTemplate = prefs.getCustomPrompt().ifBlank { null }
-        )
+        val service = AIService.forExtraction(prefs)
         val offset = prefs.getReminderOffsetHours()
 
         for (note in pending) {

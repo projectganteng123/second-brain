@@ -59,19 +59,14 @@ class InputViewModel(
     fun processWithAI() {
         val text = _rawText.value.trim()
         if (text.isBlank()) return
-        val keys = prefs.getApiKeys()
-        if (keys.isEmpty()) {
-            _uiState.value = InputUiState.Error("API key Gemini belum diatur. Buka Pengaturan terlebih dahulu.")
+        if (!prefs.hasAnyActiveApiKey()) {
+            _uiState.value = InputUiState.Error("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
             return
         }
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            val service = AIService(
-                keys = keys,
-                models = PrefsManager.EXTRACTION_MODELS,
-                promptTemplate = prefs.getCustomPrompt().ifBlank { null }
-            )
+            val service = AIService.forExtraction(prefs)
             service.extractMetadata(text, now)
                 .onSuccess { meta ->
                     // Pra-isi prioritas/status dari rekomendasi AI bila user belum memilih manual

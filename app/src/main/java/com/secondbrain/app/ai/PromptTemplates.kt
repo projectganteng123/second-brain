@@ -53,4 +53,21 @@ Aturan:
         template
             .replace(PLACEHOLDER_NOW, now)
             .replace(PLACEHOLDER_NOTE, note)
+
+    /** Prompt tanya-jawab, dipakai semua provider. */
+    fun qaPrompt(question: String, contextNotes: List<String>): String {
+        val context = contextNotes.mapIndexed { i, n -> "[${i + 1}] $n" }.joinToString("\n\n")
+        return """
+Kamu adalah asisten pribadi yang menjawab pertanyaan berdasarkan catatan pengguna.
+
+Pertanyaan: "$question"
+
+Catatan yang relevan:
+$context
+
+Jawab pertanyaan secara ringkas dan langsung berdasarkan catatan di atas.
+Jika informasi tidak tersedia dalam catatan, katakan dengan jelas.
+Gunakan Bahasa Indonesia.
+""".trimIndent()
+    }
 }
