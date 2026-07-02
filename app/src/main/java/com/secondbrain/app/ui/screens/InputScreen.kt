@@ -95,6 +95,9 @@ fun InputScreen(
     // ----- Kata pemicu suara (voice trigger) -----
     val voiceTriggerEnabled = remember { prefs.isVoiceTriggerEnabled() }
     var triggerMuted by remember { mutableStateOf(false) }
+    // Mic manual hanya membangunkan lagi pemicu yang tadinya masih MENUNGGU —
+    // pemicu yang sudah Captured tetap diam (kata pemicu hanya di awal).
+    var resumeTriggerAfterManual by remember { mutableStateOf(false) }
     val voiceTrigger = remember {
         VoiceTriggerController(
             context,
@@ -155,10 +158,16 @@ fun InputScreen(
         vm.updateText(controller.value.text)
         val queued = pendingStart
         pendingStart = null
-        if (queued != null) queued() else maybeResumeVoiceTrigger()
+        if (queued != null) queued()
+        else if (resumeTriggerAfterManual) {
+            resumeTriggerAfterManual = false
+            maybeResumeVoiceTrigger()
+        }
     }
 
     fun beginCapture(label: String?) {
+        resumeTriggerAfterManual = voiceTrigger.state is VoiceTriggerController.State.Waiting ||
+            voiceTrigger.state == VoiceTriggerController.State.Continuing
         voiceTrigger.stopListening()   // lepas mic dari mode kata pemicu dulu (serial)
         val target = if (label == null) ButtonTarget.Insert else controller.targetForButton()
         if (target is ButtonTarget.Replace) controller.setHighlight(target.block.start) // Pengaman 2
@@ -343,7 +352,7 @@ fun InputScreen(
                     hasPermission = hasMicPermission,
                     isDark = isDark,
                     onToggleMute = { triggerMuted = !triggerMuted },
-                    onEndDictation = { voiceTrigger.endDictation() },
+                    onRearm = { voiceTrigger.startListening() },
                     onRequestPermission = { permissionLauncher.launch(Manifest.permission.RECORD_AUDIO) }
                 )
                 Spacer(Modifier.height(4.dp))
@@ -544,14 +553,15 @@ private fun VoiceTriggerStatus(
     hasPermission: Boolean,
     isDark: Boolean,
     onToggleMute: () -> Unit,
-    onEndDictation: () -> Unit,
+    onRearm: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
-    val dictating = state is VoiceTriggerController.State.Dictating
+    val continuing = state == VoiceTriggerController.State.Continuing
+    val captured = state == VoiceTriggerController.State.Captured
     val heard = (state as? VoiceTriggerController.State.Waiting)?.triggerHeard == true
     val bg = when {
-        dictating -> if (isDark) Peach600.copy(0.25f) else Peach200.copy(0.5f)
-        heard -> if (isDark) Sky600.copy(0.2f) else Sky50
+        continuing -> if (isDark) Peach600.copy(0.25f) else Peach200.copy(0.5f)
+        captured || heard -> if (isDark) Sky600.copy(0.2f) else Sky50
         else -> if (isDark) GlassDark else GlassLight
     }
     Row(
@@ -565,7 +575,8 @@ private fun VoiceTriggerStatus(
             !hasPermission -> Triple(Icons.Outlined.MicOff, "Izinkan mikrofon untuk kata pemicu", Lemon600)
             muted -> Triple(Icons.Outlined.HearingDisabled, "Kata pemicu dijeda", if (isDark) Lavender400 else Gray400)
             state is VoiceTriggerController.State.Unavailable -> Triple(Icons.Outlined.ErrorOutline, state.message, Rose600)
-            dictating -> Triple(Icons.Outlined.GraphicEq, "Mendengarkan — ucapan langsung dicatat", Peach600)
+            continuing -> Triple(Icons.Outlined.GraphicEq, "Kata pemicu terdengar — ucapkan isinya…", Peach600)
+            captured -> Triple(Icons.Outlined.CheckCircle, "Tertangkap — tambah lewat tombol mic", Sky600)
             heard -> Triple(Icons.Outlined.Hearing, "Kata pemicu terdengar…", Sky600)
             state is VoiceTriggerController.State.Waiting ->
                 Triple(Icons.Outlined.Hearing, "Menunggu \"$triggerWord\"…", if (isDark) Lavender400 else Gray600)
@@ -579,9 +590,9 @@ private fun VoiceTriggerStatus(
             modifier = if (!hasPermission) Modifier.weight(1f).clickable(onClick = onRequestPermission)
                        else Modifier.weight(1f)
         )
-        if (dictating) {
-            TextButton(onClick = onEndDictation, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                Text("Selesai", style = MaterialTheme.typography.labelSmall, color = Peach600)
+        if (captured && !muted) {
+            TextButton(onClick = onRearm, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text("Dengar lagi", style = MaterialTheme.typography.labelSmall, color = Sky600)
             }
         }
         if (hasPermission) {

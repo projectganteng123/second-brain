@@ -287,12 +287,13 @@ fun SettingsScreen(
             GlassCard {
                 SectionLabel("kata pemicu suara", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Saat layar Catatan baru terbuka, app terus mendengarkan (mic hanya aktif selama " +
-                    "layar itu terbuka). Ucapan biasa diabaikan; kalimat yang DIAWALI kata pemicu " +
-                    "langsung ditulis ke catatan — mis. \"${vtWord.ifBlank { "Jarvis" }}, ingatkan saya 10 menit lagi\". " +
-                    "Setelah terpicu, mode dikte terbuka: ucapan berikutnya langsung masuk sampai hening " +
-                    "±10 detik atau tombol Selesai. Catatan: di sebagian HP tiap siklus dengar berbunyi " +
-                    "\"ding\" dan baterai lebih boros.",
+                    "Saat layar Catatan baru terbuka, app mendengarkan (mic hanya aktif selama layar " +
+                    "itu terbuka). Ucapan biasa diabaikan; kalimat yang DIAWALI kata pemicu langsung " +
+                    "ditulis ke catatan — mis. \"${vtWord.ifBlank { "Jarvis" }}, ingatkan saya 10 menit lagi\". " +
+                    "Setelah satu kalimat tertangkap, mendengarkan BERHENTI (menghindari bunyi \"ding\" " +
+                    "berulang) — tambah kalimat lewat tombol mic, atau ketuk \"Dengar lagi\" untuk memakai " +
+                    "kata pemicu lagi. Catatan: selama MENUNGGU kata pemicu, sebagian HP tetap berbunyi " +
+                    "\"ding\" tiap beberapa detik dan baterai lebih boros.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )

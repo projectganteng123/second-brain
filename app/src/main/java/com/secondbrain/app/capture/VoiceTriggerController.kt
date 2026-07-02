@@ -11,15 +11,17 @@ import androidx.compose.runtime.setValue
 /**
  * Mode kata pemicu ("Jarvis") di layar Input.
  *
- * Pencocokan dilakukan pada TEKS hasil STT, bukan audio: [SttSession] di-loop terus
- * selama aktif. Saat WAITING, transkrip dibuang kecuali diawali kata pemicu; begitu
- * terpicu, sisa kalimat langsung disisipkan (kata pemicu dibuang / diganti placeholder)
- * dan masuk mode DICTATING: semua ucapan berikutnya disisipkan tanpa pemicu, sampai
- * 2 sesi kosong beruntun (±8–10 detik hening) atau [endDictation].
+ * Pencocokan dilakukan pada TEKS hasil STT, bukan audio: [SttSession] di-loop selama
+ * WAITING. Transkrip dibuang kecuali diawali kata pemicu; begitu terpicu, sisa kalimat
+ * disisipkan (kata pemicu dibuang / diganti placeholder) lalu loop BERHENTI (Captured) —
+ * menghindari bunyi "ding" beruntun dari restart sesi. Kalimat tambahan direkam lewat
+ * tombol mic biasa; kata pemicu diaktifkan lagi via [startListening] ("Dengar lagi").
+ *
+ * Kasus "Jarvis" diucap sendirian (isi menyusul setelah jeda): satu sesi lanjutan
+ * (Continuing) dijalankan untuk menangkap isinya — sekali saja, bukan loop.
  *
  * Kontrak mic serial dipertahankan: pemanggil wajib [stopListening] sebelum memakai
- * SpeechRecognizer lain (mic manual/tombol template), lalu [startListening] lagi.
- * Semua metode dipanggil dari main thread.
+ * SpeechRecognizer lain (mic manual/tombol template). Semua metode dari main thread.
  */
 class VoiceTriggerController(
     context: Context,
@@ -31,7 +33,10 @@ class VoiceTriggerController(
         object Off : State
         /** Menunggu kata pemicu; [triggerHeard] true saat transkrip parsial sudah cocok. */
         data class Waiting(val triggerHeard: Boolean) : State
-        object Dictating : State
+        /** Kata pemicu terucap sendirian — satu sesi lanjutan menangkap isinya. */
+        object Continuing : State
+        /** Kalimat pemicu tertangkap; berhenti mendengarkan sampai diaktifkan lagi. */
+        object Captured : State
         /** Recognizer gagal beruntun — loop dihentikan agar tidak berputar panas. */
         data class Unavailable(val message: String) : State
     }
@@ -42,14 +47,12 @@ class VoiceTriggerController(
     private val session = SttSession(context)
     private val handler = Handler(Looper.getMainLooper())
     private var running = false
-    private var emptyStreak = 0     // sesi kosong beruntun saat DICTATING
     private var fastFailStreak = 0  // sesi kosong yang berakhir <1,5 dtk = recognizer bermasalah
     private var sessionStartedAt = 0L
 
     fun startListening() {
         if (running) return
         running = true
-        emptyStreak = 0
         fastFailStreak = 0
         state = State.Waiting(triggerHeard = false)
         startSession()
@@ -60,14 +63,6 @@ class VoiceTriggerController(
         handler.removeCallbacksAndMessages(null)
         session.destroy()
         if (state != State.Off) state = State.Off
-    }
-
-    /** Tombol selesai: akhiri mode dikte, kembali menunggu kata pemicu. */
-    fun endDictation() {
-        if (state is State.Dictating) {
-            emptyStreak = 0
-            state = State.Waiting(triggerHeard = false)
-        }
     }
 
     private fun startSession() {
@@ -110,32 +105,42 @@ class VoiceTriggerController(
         when (val s = state) {
             is State.Waiting -> {
                 val rest = if (trimmed.isEmpty()) null else matchTrigger(trimmed, triggerWord())
-                if (rest != null) {
-                    val ph = placeholderWord().trim()
-                    val content = when {
-                        rest.isBlank() -> ""      // hanya kata pemicu → isi menyusul di mode dikte
-                        ph.isEmpty() -> rest
-                        else -> "$ph $rest"
+                when {
+                    rest == null -> {
+                        if (s.triggerHeard) state = State.Waiting(triggerHeard = false)
+                        scheduleRestart(250)
                     }
-                    if (content.isNotBlank()) onInsert(content)
-                    emptyStreak = 0
-                    state = State.Dictating
-                } else if (s.triggerHeard) {
-                    state = State.Waiting(triggerHeard = false)
+                    rest.isBlank() -> {
+                        state = State.Continuing
+                        scheduleRestart(250)
+                    }
+                    else -> {
+                        val ph = placeholderWord().trim()
+                        onInsert(if (ph.isEmpty()) rest else "$ph $rest")
+                        finishCaptured()
+                    }
                 }
             }
-            is State.Dictating -> {
+            State.Continuing -> {
                 if (trimmed.isNotEmpty()) {
                     onInsert(trimmed)
-                    emptyStreak = 0
-                } else if (++emptyStreak >= 2) {
-                    emptyStreak = 0
+                    finishCaptured()
+                } else {
+                    // Tidak ada isi setelah kata pemicu → kembali menunggu.
                     state = State.Waiting(triggerHeard = false)
+                    scheduleRestart(250)
                 }
             }
             else -> {}
         }
-        scheduleRestart(250)
+    }
+
+    /** Kalimat tertangkap: hentikan loop dengar (tanpa ding lanjutan), tunggu "Dengar lagi". */
+    private fun finishCaptured() {
+        running = false
+        handler.removeCallbacksAndMessages(null)
+        session.destroy()
+        state = State.Captured
     }
 
     private fun scheduleRestart(delayMs: Long) {
