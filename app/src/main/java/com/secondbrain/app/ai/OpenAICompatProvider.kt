@@ -32,7 +32,9 @@ class OpenAICompatProvider(
         withContext(Dispatchers.IO) {
             runCatching {
                 DebugLog.log("AI → request", "provider=$name model=$model\n$prompt")
-                val responseText = call(prompt, jsonOutput = true)
+                // max_tokens ikut DIHITUNG limit token-per-menit (Groq: prompt + max_tokens
+                // vs TPM) — output JSON ekstraksi kecil, jadi 2048 cukup & aman dari 413.
+                val responseText = call(prompt, jsonOutput = true, maxTokens = 2048)
                 DebugLog.log("AI ← response", responseText)
                 responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
@@ -43,19 +45,19 @@ class OpenAICompatProvider(
             runCatching {
                 val prompt = PromptTemplates.qaPrompt(question, contextNotes)
                 DebugLog.log("AI → tanya", "provider=$name model=$model\n$prompt")
-                val ans = call(prompt, jsonOutput = false)
+                val ans = call(prompt, jsonOutput = false, maxTokens = 4096)
                 DebugLog.log("AI ← jawab", ans)
                 ans
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    private fun call(prompt: String, jsonOutput: Boolean): String {
+    private fun call(prompt: String, jsonOutput: Boolean, maxTokens: Int): String {
         val body = buildString {
             append("{")
             append("\"model\": ${gson.toJson(model)}, ")
             append("\"messages\": [{\"role\": \"user\", \"content\": ${gson.toJson(prompt)}}], ")
             append("\"temperature\": 0.1, ")
-            append("\"max_completion_tokens\": 8192")
+            append("\"max_completion_tokens\": $maxTokens")
             // JSON mode hanya untuk Groq; dukungan json_object di Cerebras belum merata
             // di semua model. ExtractionParser sudah toleran terhadap teks di sekitar JSON.
             if (jsonOutput && type == AIProviderType.GROQ) {
@@ -78,8 +80,10 @@ class OpenAICompatProvider(
         if (status !in 200..299) {
             val errorBody = conn.errorStream?.bufferedReader()?.readText().orEmpty()
             DebugLog.log("AI ✕ http $status", "[$name] " + errorBody.take(800))
-            val isRate = status == 429
-            val isDaily = isRate && (
+            // 413 = permintaan dianggap terlalu besar untuk jatah token-per-menit (TPM);
+            // perlakukan seperti rate limit agar fallback pindah key/model/provider.
+            val isRate = status == 429 || status == 413
+            val isDaily = status == 429 && (
                 errorBody.contains("per day", true) ||
                 errorBody.contains("PerDay", true) ||
                 errorBody.contains("(RPD)") ||
@@ -124,6 +128,7 @@ class OpenAICompatProvider(
                 "(ada spasi/karakter tersembunyi). Hapus isi field, tempel ulang HANYA key baru, lalu Simpan."
             403 -> "Akses ditolak $name (403): ${apiMessage ?: "periksa izin API key"}"
             404 -> "Model \"$model\" tidak ditemukan di $name (404). ${apiMessage.orEmpty()}"
+            413 -> "Permintaan melebihi jatah token-per-menit $name (413). ${apiMessage ?: "Coba lagi sebentar lagi, atau persingkat catatan."}"
             429 -> "Limit $name tercapai (429). ${apiMessage ?: "Coba lagi nanti, atau tambah API key lain di Pengaturan."}"
             in 500..599 -> "Server $name sedang bermasalah ($status). Coba lagi nanti."
             else -> "Gagal di $name ($status): ${apiMessage ?: body.take(200)}"

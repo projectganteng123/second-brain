@@ -46,10 +46,17 @@ class AIService(
     suspend fun extractMetadata(rawText: String, now: String): Result<Metadata> = runCatching {
         val p = prompts ?: throw IllegalStateException("AIService ini dibuat untuk tanya-jawab, bukan ekstraksi")
         coroutineScope {
-            val universal = async { runFallback { it.generateJson(PromptTemplates.fill(p.universal, now, rawText)) } }
-            val finance = async { runFallback { it.generateJson(PromptTemplates.fill(p.finance, now, rawText)) } }
-            val schedule = async { runFallback { it.generateJson(PromptTemplates.fill(p.schedule, now, rawText)) } }
-            val results = listOf(universal.await(), finance.await(), schedule.await())
+            // Tiap prompt MULAI dari provider berbeda (round-robin) supaya tiga permintaan
+            // paralel tidak menghantam jatah token-per-menit satu provider sekaligus;
+            // fallback tetap mencoba semua kombinasi lain bila gagal.
+            val tasks = listOf(p.universal, p.finance, p.schedule).mapIndexed { i, template ->
+                async {
+                    runFallback(rotatedCombos(i)) {
+                        it.generateJson(PromptTemplates.fill(template, now, rawText))
+                    }
+                }
+            }
+            val results = tasks.map { it.await() }
             results.firstOrNull { it.isFailure }?.let { throw it.exceptionOrNull()!! }
             ExtractionParser.merge(
                 universalRaw = results[0].getOrThrow(),
@@ -57,6 +64,14 @@ class AIService(
                 scheduleRaw = results[2].getOrThrow()
             )
         }
+    }
+
+    /** Putar urutan grup provider: prompt ke-0 mulai dari provider #1, ke-1 dari #2, dst. */
+    private fun rotatedCombos(offset: Int): List<AICombo> {
+        val groups = combos.groupBy { it.provider }.values.toList()
+        if (groups.size <= 1) return combos
+        val k = offset % groups.size
+        return (groups.drop(k) + groups.take(k)).flatten()
     }
 
     suspend fun answerQuestion(question: String, context: List<String>): Result<String> =
@@ -70,8 +85,11 @@ class AIService(
         else -> OpenAICompatProvider(combo.provider, combo.key, combo.model)
     }
 
-    private suspend fun <T> runFallback(block: suspend (AIProvider) -> Result<T>): Result<T> {
-        if (combos.isEmpty()) {
+    private suspend fun <T> runFallback(
+        comboList: List<AICombo> = combos,
+        block: suspend (AIProvider) -> Result<T>
+    ): Result<T> {
+        if (comboList.isEmpty()) {
             return Result.failure(RuntimeException(
                 "API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu."
             ))
@@ -79,7 +97,7 @@ class AIService(
         var sawDaily = false
         var last: Throwable? = null
 
-        for ((index, combo) in combos.withIndex()) {
+        for ((index, combo) in comboList.withIndex()) {
             DebugLog.log("AI →", "pakai ${combo.provider.displayName} key=${mask(combo.key)} model=${combo.model}")
             val res = block(providerFor(combo))
             if (res.isSuccess) {

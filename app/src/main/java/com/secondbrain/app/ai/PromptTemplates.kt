@@ -10,13 +10,23 @@ enum class ExtractionKind(val label: String) {
 /**
  * Template prompt untuk ekstraksi metadata. User boleh meng-override lewat Settings (per jenis).
  * Placeholder:
- *   {now}  -> waktu sekarang (yyyy-MM-dd HH:mm) — WAJIB di prompt Acara
+ *   {now}  -> waktu sekarang ("Senin, yyyy-MM-dd HH:mm") — WAJIB di prompt Acara
  *   {note} -> teks catatan mentah — WAJIB di semua prompt
  */
 object PromptTemplates {
 
     const val PLACEHOLDER_NOW = "{now}"
     const val PLACEHOLDER_NOTE = "{note}"
+
+    /** Waktu sekarang termasuk NAMA HARI Indonesia — penting agar AI benar menghitung
+     *  "Jumat depan" / "Senin besok" menjadi tanggal absolut. */
+    fun nowString(): String {
+        val now = java.time.LocalDateTime.now()
+        val day = now.dayOfWeek.getDisplayName(
+            java.time.format.TextStyle.FULL, java.util.Locale("id", "ID")
+        )
+        return "$day, ${now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
+    }
 
     val DEFAULT_UNIVERSAL = """
 Ekstrak metadata UMUM dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON, tanpa teks lain.
@@ -97,10 +107,12 @@ Aturan:
 Ekstrak SEMUA kegiatan terjadwal & pengingat dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON, tanpa teks lain.
 
 WAKTU SEKARANG: {now}
+(format: nama hari, tanggal, jam)
 Gunakan sebagai acuan untuk MENGUBAH semua waktu relatif menjadi tanggal & jam absolut
 yang PRESISI sampai menit: "besok" -> +1 hari; "lusa" -> +2 hari; "10 menit lagi" -> sekarang
-+ 10 menit; "setengah jam lagi" -> +30 menit; "2 jam lagi" -> +2 jam. Pastikan pergeseran
-hari & tanggal benar.
++ 10 menit; "setengah jam lagi" -> +30 menit; "2 jam lagi" -> +2 jam. Gunakan NAMA HARI di atas
+untuk menghitung sebutan hari: mis. sekarang Senin, "Jumat ini" -> +4 hari, "Senin depan" -> +7 hari.
+Pastikan pergeseran hari & tanggal benar.
 Waktu samar: subuh=05:00, pagi=08:00, siang=12:00, sore=15:00, malam=19:00.
 Jika ada jam pasti, pakai jam itu. Jam wajib format HH:mm 24 jam.
 

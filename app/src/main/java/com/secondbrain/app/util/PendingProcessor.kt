@@ -1,9 +1,8 @@
 package com.secondbrain.app.util
 
 import com.secondbrain.app.ai.AIService
+import com.secondbrain.app.ai.PromptTemplates
 import com.secondbrain.app.data.repository.NoteRepository
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 /**
  * Memproses catatan yang tersimpan offline (isPendingExtraction=true) saat app dibuka
@@ -22,7 +21,7 @@ object PendingProcessor {
         val offset = prefs.getReminderOffsetHours()
 
         for (note in pending) {
-            val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+            val now = PromptTemplates.nowString()
             service.extractMetadata(note.rawText, now)
                 .onSuccess { repo.updateMetadata(note.id, it, offset) }
                 .onFailure { DebugLog.log("Pending ✕", "id=${note.id}: ${it.message}") }

@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 sealed class InputUiState {
     object Idle : InputUiState()
@@ -72,7 +70,7 @@ class InputViewModel(
         }
         viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
-            val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+            val now = com.secondbrain.app.ai.PromptTemplates.nowString()
             val service = AIService.forExtraction(prefs)
             service.extractMetadata(text, now)
                 .onSuccess { meta ->

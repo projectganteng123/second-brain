@@ -99,7 +99,7 @@ class NoteDetailViewModel(
             _state.value = _state.value.copy(reExtracting = true, message = null)
             // Seluruh blok dibungkus agar error apa pun tidak menutup aplikasi
             runCatching {
-                val now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                val now = com.secondbrain.app.ai.PromptTemplates.nowString()
                 val service = AIService.forExtraction(prefs)
                 val result = service.extractMetadata(newRawText, now)
                 result.onSuccess { meta ->

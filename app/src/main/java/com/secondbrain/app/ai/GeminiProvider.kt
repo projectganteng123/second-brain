@@ -18,7 +18,8 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         withContext(Dispatchers.IO) {
             runCatching {
                 DebugLog.log("AI → request", "model=${config.model}\n$prompt")
-                val responseText = callGemini(prompt, jsonOutput = true)
+                // Output JSON ekstraksi kecil — 2048 cukup, hemat jatah token-per-menit.
+                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = 2048)
                 DebugLog.log("AI ← response", responseText)
                 responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
@@ -29,20 +30,20 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             runCatching {
                 val prompt = buildQAPrompt(question, contextNotes)
                 DebugLog.log("AI → tanya", prompt)
-                val ans = callGemini(prompt, jsonOutput = false)
+                val ans = callGemini(prompt, jsonOutput = false, maxTokens = 8192)
                 DebugLog.log("AI ← jawab", ans)
                 ans
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    private fun callGemini(prompt: String, jsonOutput: Boolean): String {
+    private fun callGemini(prompt: String, jsonOutput: Boolean, maxTokens: Int): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}"
         )
         // thinkingBudget=0 mematikan "thinking" pada model 2.5 agar seluruh token output
         // dipakai untuk jawaban (mencegah JSON terpotong). responseMimeType memaksa JSON murni.
         val genConfig = buildString {
-            append("\"temperature\": 0.1, \"maxOutputTokens\": 8192")
+            append("\"temperature\": 0.1, \"maxOutputTokens\": $maxTokens")
             append(", \"thinkingConfig\": {\"thinkingBudget\": 0}")
             if (jsonOutput) append(", \"responseMimeType\": \"application/json\"")
         }
