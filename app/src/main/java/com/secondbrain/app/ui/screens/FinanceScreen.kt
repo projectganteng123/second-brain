@@ -15,17 +15,27 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.secondbrain.app.data.model.TransactionRef
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.format.TextStyle
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 
 private enum class TxTypeFilter(val label: String) { ALL("Semua"), INCOME("Masuk"), EXPENSE("Keluar") }
@@ -122,6 +132,11 @@ fun FinanceScreen(
                 }
             }
 
+            // ----- Line chart saldo -----
+            if (allTx.isNotEmpty()) {
+                item { BalanceLineChart(allTx, range, isDark) }
+            }
+
             if (inRange.isEmpty()) {
                 item {
                     GlassCard {
@@ -212,6 +227,105 @@ fun FinanceScreen(
     }
 }
 
+// ---------- Line chart saldo ----------
+
+/**
+ * Saldo berjalan sepanjang rentang terpilih: titik per hari, naik oleh pemasukan dan
+ * turun oleh pengeluaran. Saldo awal = kumulatif semua transaksi SEBELUM rentang.
+ * (Transaksi hanya punya tanggal, tanpa jam — jadi resolusi grafik per hari.)
+ */
+@Composable
+private fun BalanceLineChart(allTx: List<TransactionRef>, range: TimeRange, isDark: Boolean) {
+    val days = (ChronoUnit.DAYS.between(range.from, range.to).toInt() + 1).coerceAtLeast(1)
+    val series = remember(allTx, range) {
+        val initial = allTx.filter { it.date.isBefore(range.from) }.sumOf { it.signedAmount() }
+        val perDay = allTx.filter { range.contains(it.date) }
+            .groupBy { it.date }
+            .mapValues { (_, list) -> list.sumOf { it.signedAmount() } }
+        var run = initial
+        listOf(initial) + (0 until days).map { i ->
+            run += perDay[range.from.plusDays(i.toLong())] ?: 0.0
+            run
+        }
+    }
+    val first = series.first()
+    val last = series.last()
+    val trendColor = if (last >= first) Mint600 else Rose600
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(fontSize = 9.sp, color = if (isDark) Lavender400 else Gray400)
+
+    GlassCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SectionLabel("saldo")
+            Text(
+                (if (last >= 0) "" else "-") + formatIdr(kotlin.math.abs(last)),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = trendColor
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Canvas(Modifier.fillMaxWidth().height(140.dp)) {
+            val minV = series.min()
+            val maxV = series.max()
+            val span = (maxV - minV).takeIf { it > 0 } ?: 1.0
+            val padTop = 14f
+            val padBottom = 6f
+            val h = size.height - padTop - padBottom
+            fun x(i: Int) = i.toFloat() * size.width / (series.size - 1).coerceAtLeast(1)
+            fun y(v: Double) = padTop + ((1 - (v - minV) / span) * h).toFloat()
+
+            // Garis putus-putus saldo nol (bila 0 berada dalam rentang nilai)
+            if (minV < 0 && maxV > 0) {
+                drawLine(
+                    color = if (isDark) Lavender400.copy(0.4f) else Gray400.copy(0.5f),
+                    start = Offset(0f, y(0.0)),
+                    end = Offset(size.width, y(0.0)),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+                )
+            }
+
+            val line = Path().apply {
+                series.forEachIndexed { i, v ->
+                    if (i == 0) moveTo(x(i), y(v)) else lineTo(x(i), y(v))
+                }
+            }
+            // Isian gradasi di bawah garis
+            val fill = Path().apply {
+                addPath(line)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(fill, Brush.verticalGradient(
+                listOf(trendColor.copy(alpha = 0.25f), Color.Transparent),
+                startY = 0f, endY = size.height
+            ))
+            drawPath(line, trendColor, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
+
+            // Label nilai maks & min di sisi kiri
+            fun shortSigned(v: Double) = (if (v < 0) "-" else "") + formatShortIdr(v)
+            drawText(textMeasurer, shortSigned(maxV), topLeft = Offset(2f, 0f), style = labelStyle)
+            drawText(
+                textMeasurer, shortSigned(minV),
+                topLeft = Offset(2f, size.height - 12.sp.toPx()), style = labelStyle
+            )
+        }
+        Spacer(Modifier.height(2.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${range.from}", style = MaterialTheme.typography.labelSmall,
+                color = if (isDark) Lavender400 else Gray400)
+            Text("${range.to}", style = MaterialTheme.typography.labelSmall,
+                color = if (isDark) Lavender400 else Gray400)
+        }
+    }
+}
+
 // ---------- Pie chart ----------
 
 @Composable
@@ -297,7 +411,7 @@ private fun FinanceCalendar(
                     modifier = Modifier.size(18.dp), tint = if (isDark) Lavender200 else Lavender600)
             }
             Text(
-                month.month.getDisplayName(TextStyle.FULL, Locale("id", "ID")) + " " + month.year,
+                month.month.getDisplayName(java.time.format.TextStyle.FULL, Locale("id", "ID")) + " " + month.year,
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (isDark) Lavender50 else Lavender800,
                 textAlign = TextAlign.Center,
