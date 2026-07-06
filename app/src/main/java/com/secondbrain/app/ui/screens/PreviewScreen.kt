@@ -17,6 +17,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.notification.ReminderScheduler
+import com.secondbrain.app.util.PrefsManager
+import com.secondbrain.app.util.TimeFormat
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.viewmodel.InputUiState
@@ -35,9 +37,23 @@ fun PreviewScreen(
     val selectedStatus by vm.selectedStatus.collectAsState()
     val useAlarm by vm.useAlarm.collectAsState()
 
-    var editedMetadata by remember { mutableStateOf(metadata) }
+    var editedMetadata by remember {
+        mutableStateOf(metadata.copy(
+            preparationTimes = metadata.preparationTimesEffective(),
+            preparationTime = null
+        ))
+    }
     var editing by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val prefs = remember { PrefsManager(context) }
+    // Toggle alarm persiapan: menyala bila AI/user mengisi waktunya, bisa dimatikan.
+    var prepEnabled by remember { mutableStateOf(metadata.preparationTimesEffective().isNotEmpty()) }
+    val canExactAlarm = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            (context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager)
+                .canScheduleExactAlarms()
+        } else true
+    }
 
     LaunchedEffect(uiState) {
         if (uiState is InputUiState.Saved) {
@@ -111,9 +127,9 @@ fun PreviewScreen(
                     MetadataRow(
                         "Tanggal",
                         if (editedMetadata.recurrenceDates.size == 1)
-                            editedMetadata.recurrenceDates.first()
+                            TimeFormat.date(editedMetadata.recurrenceDates.first())
                         else
-                            "${editedMetadata.recurrenceDates.first()} (+${editedMetadata.recurrenceDates.size - 1})"
+                            "${TimeFormat.date(editedMetadata.recurrenceDates.first())} (+${editedMetadata.recurrenceDates.size - 1})"
                     )
                 }
 
@@ -237,22 +253,119 @@ fun PreviewScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Jadikan alarm", style = MaterialTheme.typography.bodyMedium,
+                        Text("Alarm acara", style = MaterialTheme.typography.bodyMedium,
                             color = if (isDark) Lavender50 else Lavender800)
-                        Text("Pengingat berbunyi alarm + layar penuh, bukan sekadar notifikasi",
+                        val offsetMin = prefs.getAlarmOffsetMinutes()
+                        Text(
+                            "Alarm keras " +
+                                (if (offsetMin == 0) "tepat saat acara mulai" else "$offsetMin menit sebelum acara") +
+                                ". Saat mulai selalu ada notifikasi info.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) Lavender400 else Gray600)
+                            color = if (isDark) Lavender400 else Gray600
+                        )
                     }
                     Switch(checked = useAlarm, onCheckedChange = vm::setUseAlarm)
                 }
 
-                if (editedMetadata.preparationTime != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Outlined.Alarm, null, modifier = Modifier.size(14.dp), tint = Mint600)
-                        Text("Pengingat persiapan: ${editedMetadata.preparationTime}",
+                // ----- Alarm persiapan (boleh lebih dari satu waktu) -----
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Alarm persiapan", style = MaterialTheme.typography.bodyMedium,
+                            color = if (isDark) Lavender50 else Lavender800)
+                        Text("Tiap waktu persiapan menjadi alarm keras",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isDark) Mint200 else Mint600)
+                            color = if (isDark) Lavender400 else Gray600)
+                    }
+                    Switch(
+                        checked = prepEnabled,
+                        onCheckedChange = {
+                            prepEnabled = it
+                            if (it && editedMetadata.preparationTimes.orEmpty().isEmpty()) {
+                                editedMetadata = editedMetadata.copy(
+                                    preparationTimes = listOf(defaultPrepTime())
+                                )
+                            }
+                        }
+                    )
+                }
+                if (prepEnabled) {
+                    val prepList = editedMetadata.preparationTimes.orEmpty()
+                    prepList.forEachIndexed { i, t ->
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            DateTimeField(
+                                label = "Persiapan ${i + 1}",
+                                value = t,
+                                onChange = { new ->
+                                    val list = prepList.toMutableList()
+                                    if (new == null) list.removeAt(i) else list[i] = new
+                                    editedMetadata = editedMetadata.copy(preparationTimes = list)
+                                },
+                                isDark = isDark,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = {
+                                editedMetadata = editedMetadata.copy(
+                                    preparationTimes = prepList.toMutableList().also { it.removeAt(i) }
+                                )
+                            }) {
+                                Icon(Icons.Outlined.DeleteOutline, "Hapus waktu persiapan",
+                                    tint = Rose600, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Outlined.Alarm, null, modifier = Modifier.size(12.dp), tint = Mint600)
+                            Text(TimeFormat.dateTime(t),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDark) Mint200 else Mint600)
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    GlassButton(
+                        text = "Tambah waktu persiapan",
+                        icon = Icons.Outlined.Add,
+                        onClick = {
+                            editedMetadata = editedMetadata.copy(
+                                preparationTimes = prepList + defaultPrepTime()
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // ----- Izin exact alarm (Android 12+) -----
+                if (!canExactAlarm && editedMetadata.recurrenceDates.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .background(if (isDark) Lemon600.copy(0.12f) else Lemon50, RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Outlined.Warning, null, modifier = Modifier.size(16.dp), tint = Lemon600)
+                        Column {
+                            Text(
+                                "Notifikasi acara butuh izin \"Alarm & pengingat\" agar tampil tepat waktu. " +
+                                "Tanpa izin, notifikasi acara TIDAK dijadwalkan (alarm keras tetap jalan).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDark) Lemon200 else Lemon800
+                            )
+                            TextButton(onClick = {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                            android.net.Uri.parse("package:${context.packageName}")
+                                        )
+                                    )
+                                }
+                            }) { Text("Beri izin", color = Lemon600) }
+                        }
                     }
                 }
             }
@@ -264,7 +377,13 @@ fun PreviewScreen(
             GlassButton(
                 text = if (isSaving) "Menyimpan..." else "Simpan catatan",
                 icon = Icons.Outlined.Save,
-                onClick = { vm.saveNote(editedMetadata) },
+                onClick = {
+                    vm.saveNote(editedMetadata.copy(
+                        preparationTimes = if (prepEnabled)
+                            editedMetadata.preparationTimes.orEmpty().filter { it.isNotBlank() }
+                        else emptyList()
+                    ))
+                },
                 accent = true,
                 enabled = !isSaving,
                 modifier = Modifier.fillMaxWidth()
@@ -274,6 +393,11 @@ fun PreviewScreen(
         }
     }
 }
+
+/** Waktu persiapan default saat user menambah manual: 1 jam dari sekarang. */
+private fun defaultPrepTime(): String =
+    java.time.LocalDateTime.now().plusHours(1)
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
 
 @Composable
 private fun WarningBox(message: String) {
@@ -418,15 +542,8 @@ private fun MetadataEditor(
             isDark = isDark
         )
 
-        // ----- Waktu persiapan: kalender + jam -----
-        Spacer(Modifier.height(10.dp))
-        DateTimeField(
-            label = "Pengingat persiapan (opsional)",
-            value = metadata.preparationTime,
-            onChange = { onChange(metadata.copy(preparationTime = it)) },
-            isDark = isDark,
-            modifier = Modifier.fillMaxWidth()
-        )
+        // (Alarm persiapan diedit di kartu "pengaturan manual" — bukan di sini,
+        //  supaya tidak ada dua sumber yang saling menimpa.)
 
         // ----- Lokasi, orang, organisasi, keywords -----
         Spacer(Modifier.height(8.dp))

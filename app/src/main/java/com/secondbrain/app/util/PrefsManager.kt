@@ -45,8 +45,26 @@ class PrefsManager(context: Context) {
 
     // ---- Lainnya ----
 
-    fun saveReminderOffsetHours(hours: Int) = prefs.edit { putInt(KEY_REMINDER_OFFSET, hours) }
-    fun getReminderOffsetHours(): Int = prefs.getInt(KEY_REMINDER_OFFSET, 24)
+    // ---- Alarm acara ----
+
+    /** Toggle alarm di layar konfirmasi (Preview) menyala secara default atau tidak. */
+    fun setEventAlarmDefaultOn(on: Boolean) = prefs.edit { putBoolean(KEY_EVENT_ALARM_DEFAULT, on) }
+    fun isEventAlarmDefaultOn(): Boolean = prefs.getBoolean(KEY_EVENT_ALARM_DEFAULT, false)
+
+    /** Alarm berbunyi X menit sebelum acara (0 = tepat saat mulai). */
+    fun saveAlarmOffsetMinutes(minutes: Int) = prefs.edit { putInt(KEY_ALARM_OFFSET_MIN, minutes) }
+    fun getAlarmOffsetMinutes(): Int = prefs.getInt(KEY_ALARM_OFFSET_MIN, 15)
+
+    // ---- Rentang waktu halaman (Keuangan/Acara) — bertahan walau keluar halaman/app ----
+
+    fun saveTimeRange(page: String, preset: String, from: String, to: String) = prefs.edit {
+        putString("range_${page}_preset", preset)
+        putString("range_${page}_from", from)
+        putString("range_${page}_to", to)
+    }
+    fun getTimeRangePreset(page: String): String? = prefs.getString("range_${page}_preset", null)
+    fun getTimeRangeFrom(page: String): String? = prefs.getString("range_${page}_from", null)
+    fun getTimeRangeTo(page: String): String? = prefs.getString("range_${page}_to", null)
 
     /** Template prompt ekstraksi kustom per jenis (Universal/Keuangan/Acara). Kosong = default. */
     fun saveExtractionPrompt(kind: ExtractionKind, template: String) =
@@ -77,7 +95,8 @@ class PrefsManager(context: Context) {
     fun getVoiceTriggerPlaceholder(): String = prefs.getString(KEY_VOICE_TRIGGER_PLACEHOLDER, "") ?: ""
 
     companion object {
-        private const val KEY_REMINDER_OFFSET = "reminder_offset_hours"
+        private const val KEY_EVENT_ALARM_DEFAULT = "event_alarm_default"
+        private const val KEY_ALARM_OFFSET_MIN = "alarm_offset_minutes"
         private const val KEY_DEFAULT_TEMPLATE = "default_template_id"
         private const val KEY_VOICE_TRIGGER_ENABLED = "voice_trigger_enabled"
         private const val KEY_VOICE_TRIGGER_WORD = "voice_trigger_word"
@@ -118,6 +137,7 @@ class PrefsManager(context: Context) {
         /** Menjawab: mulai dari model kuat, turun bila limit. */
         fun answerModels(provider: AIProviderType): List<String> = modelLadder(provider).reversed()
 
-        val REMINDER_OFFSET_OPTIONS = listOf(1, 3, 12, 24, 48)
+        /** Pilihan offset alarm sebelum acara (menit); 0 = tepat saat mulai. */
+        val ALARM_OFFSET_OPTIONS = listOf(60, 45, 30, 15, 10, 5, 0)
     }
 }

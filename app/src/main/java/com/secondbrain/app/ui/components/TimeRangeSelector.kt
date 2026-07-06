@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.secondbrain.app.ui.theme.*
+import com.secondbrain.app.util.PrefsManager
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -52,6 +53,21 @@ data class TimeRange(val from: LocalDate, val to: LocalDate, val preset: RangePr
         }
     }
 }
+
+/** Muat rentang tersimpan halaman; preset non-custom dihitung ulang relatif hari ini
+ *  (mis. "Bulan ini" selalu bulan berjalan). Belum pernah disimpan → Bulan ini. */
+fun restoreTimeRange(prefs: PrefsManager, page: String): TimeRange {
+    val presetName = prefs.getTimeRangePreset(page) ?: return TimeRange.of(RangePreset.MONTH)
+    val preset = RangePreset.entries.firstOrNull { it.name == presetName } ?: RangePreset.MONTH
+    if (preset != RangePreset.CUSTOM) return TimeRange.of(preset)
+    val f = runCatching { LocalDate.parse(prefs.getTimeRangeFrom(page)) }.getOrNull()
+    val t = runCatching { LocalDate.parse(prefs.getTimeRangeTo(page)) }.getOrNull()
+    return if (f != null && t != null) TimeRange(f, t, RangePreset.CUSTOM)
+           else TimeRange.of(RangePreset.MONTH)
+}
+
+fun persistTimeRange(prefs: PrefsManager, page: String, range: TimeRange) =
+    prefs.saveTimeRange(page, range.preset.name, range.from.toString(), range.to.toString())
 
 /** Dropdown rentang waktu di pojok kanan atas halaman; Custom membuka dialog dua tanggal. */
 @Composable

@@ -18,7 +18,7 @@ object PendingProcessor {
 
         DebugLog.log("Pending", "Memproses ${pending.size} catatan tertunda")
         val service = AIService.forExtraction(prefs)
-        val offset = prefs.getReminderOffsetHours()
+        val offset = prefs.getAlarmOffsetMinutes()
 
         for (note in pending) {
             val now = PromptTemplates.nowString()

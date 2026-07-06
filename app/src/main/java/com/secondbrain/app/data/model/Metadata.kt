@@ -14,8 +14,10 @@ data class Metadata(
     /** Rekomendasi AI (string mentah, dipetakan ke enum dengan fallback). */
     val priority: String? = null,
     val status: String? = null,
-    /** Waktu persiapan absolut "yyyy-MM-ddTHH:mm" — diisi hanya jika user minta diingatkan persiapan. */
+    /** LEGACY: waktu persiapan tunggal. Dipertahankan agar catatan lama terbaca; yang baru pakai [preparationTimes]. */
     val preparationTime: String? = null,
+    /** Waktu persiapan absolut "yyyy-MM-ddTHH:mm" (boleh lebih dari satu) — tiap waktu = 1 alarm. */
+    val preparationTimes: List<String>? = null,
     // Field di bawah nullable (bukan emptyList) karena metadataJson catatan LAMA tidak
     // memuatnya dan Gson mengabaikan default Kotlin — baca selalu lewat .orEmpty().
     /** Transaksi keuangan hasil prompt Keuangan. */
@@ -24,7 +26,11 @@ data class Metadata(
     val extraSchedules: List<ExtraSchedule>? = null,
     /** Rekomendasi AI: pengingat catatan ini sebaiknya alarm keras (pra-centang di Preview). */
     val suggestAlarm: Boolean = false
-)
+) {
+    /** Daftar waktu persiapan efektif — menggabungkan field baru & legacy. */
+    fun preparationTimesEffective(): List<String> =
+        preparationTimes ?: preparationTime?.let { listOf(it) } ?: emptyList()
+}
 
 /** Satu transaksi keuangan. Field string nullable karena diisi Gson dari output AI. */
 data class Transaction(
@@ -65,7 +71,9 @@ data class ExtraSchedule(
 ) {
     fun displayLine(): String = buildString {
         append("• ").append(title?.takeIf { it.isNotBlank() } ?: "(tanpa judul)")
-        dates.orEmpty().firstOrNull()?.let { append(" — ").append(it) }
+        dates.orEmpty().firstOrNull()?.let {
+            append(" — ").append(com.secondbrain.app.util.TimeFormat.dateMedium(it))
+        }
         startTime?.let { append(" ").append(it) }
         if ((dates?.size ?: 0) > 1) append(" (+${dates!!.size - 1} tanggal)")
         if (useAlarm) append(" ⏰")

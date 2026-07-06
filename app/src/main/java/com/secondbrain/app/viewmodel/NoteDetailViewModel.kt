@@ -61,7 +61,7 @@ class NoteDetailViewModel(
     fun setUseAlarm(v: Boolean) {
         val note = _state.value.note ?: return
         viewModelScope.launch {
-            repo.setUseAlarm(note.id, v, prefs.getReminderOffsetHours())
+            repo.setUseAlarm(note.id, v, prefs.getAlarmOffsetMinutes())
             _state.value = _state.value.copy(
                 note = note.copy(useAlarm = v),
                 message = if (v) "Pengingat dijadikan alarm" else "Alarm dimatikan"
@@ -104,7 +104,7 @@ class NoteDetailViewModel(
                 val result = service.extractMetadata(newRawText, now)
                 result.onSuccess { meta ->
                     repo.update(note.copy(rawText = newRawText, updatedAt = System.currentTimeMillis()))
-                    repo.updateMetadata(note.id, meta, prefs.getReminderOffsetHours())
+                    repo.updateMetadata(note.id, meta, prefs.getAlarmOffsetMinutes())
                     val refreshed = repo.getById(note.id)
                     _state.value = _state.value.copy(
                         note = refreshed,

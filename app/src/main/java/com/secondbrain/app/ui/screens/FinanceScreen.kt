@@ -77,8 +77,11 @@ fun FinanceScreen(
     onNoteClick: (Long) -> Unit
 ) {
     val isDark = isSystemDark()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { com.secondbrain.app.util.PrefsManager(context) }
     val notes by repo.getAllActive().collectAsState(initial = emptyList())
-    var range by remember { mutableStateOf(TimeRange.of(RangePreset.MONTH)) }
+    // Rentang bertahan walau keluar halaman/app (tersimpan di prefs)
+    var range by remember { mutableStateOf(restoreTimeRange(prefs, "finance")) }
 
     val allTx = remember(notes) { repo.allTransactions(notes) }
     val inRange = remember(allTx, range) { allTx.filter { range.contains(it.date) } }
@@ -128,7 +131,11 @@ fun FinanceScreen(
                         Text("Keuangan", style = MaterialTheme.typography.titleMedium,
                             color = if (isDark) Lavender50 else Lavender800)
                     }
-                    TimeRangeSelector(range, { range = it }, isDark)
+                    TimeRangeSelector(
+                        range,
+                        { range = it; persistTimeRange(prefs, "finance", it) },
+                        isDark
+                    )
                 }
             }
 
@@ -206,11 +213,23 @@ fun FinanceScreen(
                             color = if (isDark) Lavender50 else Lavender800
                         )
                         Text(
-                            "${ref.date} · ${ref.category()} · ${ref.noteTitle.take(28)}",
+                            "${com.secondbrain.app.util.TimeFormat.dateMedium(ref.date)} · ${ref.category()} · ${ref.noteTitle.take(28)}",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isDark) Lavender400 else Gray400,
                             maxLines = 1
                         )
+                        // Jumlah × harga satuan
+                        val qty = ref.tx.quantity
+                        if (qty != null && qty > 0) {
+                            val qtyStr = if (qty % 1.0 == 0.0) qty.toInt().toString() else qty.toString()
+                            val unit = ref.tx.unit?.takeIf { it.isNotBlank() }?.let { " $it" } ?: ""
+                            Text(
+                                "$qtyStr$unit × @${formatIdr(ref.tx.amount / qty)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDark) Lavender200 else Gray600,
+                                maxLines = 1
+                            )
+                        }
                     }
                     val signed = ref.signedAmount()
                     Text(
@@ -318,9 +337,11 @@ private fun BalanceLineChart(allTx: List<TransactionRef>, range: TimeRange, isDa
         }
         Spacer(Modifier.height(2.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("${range.from}", style = MaterialTheme.typography.labelSmall,
+            Text(com.secondbrain.app.util.TimeFormat.dateMedium(range.from),
+                style = MaterialTheme.typography.labelSmall,
                 color = if (isDark) Lavender400 else Gray400)
-            Text("${range.to}", style = MaterialTheme.typography.labelSmall,
+            Text(com.secondbrain.app.util.TimeFormat.dateMedium(range.to),
+                style = MaterialTheme.typography.labelSmall,
                 color = if (isDark) Lavender400 else Gray400)
         }
     }

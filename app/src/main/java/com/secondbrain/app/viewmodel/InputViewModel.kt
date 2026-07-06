@@ -81,8 +81,9 @@ class InputViewModel(
                     if (!userTouchedStatus) {
                         NoteStatus.fromString(meta.status)?.let { _selectedStatus.value = it }
                     }
-                    // Rekomendasi AI: pra-centang alarm (user tetap bisa mematikan di Preview)
-                    if (meta.suggestAlarm) _useAlarm.value = true
+                    // Toggle alarm di Preview: mengikuti default di Settings; rekomendasi AI
+                    // hanya bisa MENYALAKAN (user tetap bisa mematikan di Preview).
+                    _useAlarm.value = prefs.isEventAlarmDefaultOn() || meta.suggestAlarm
                     _uiState.value = InputUiState.Preview(meta)
                 }
                 .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }
@@ -98,7 +99,7 @@ class InputViewModel(
                     metadata = metadata,
                     prioritas = _selectedPrioritas.value,
                     status = _selectedStatus.value,
-                    offsetHours = prefs.getReminderOffsetHours(),
+                    alarmOffsetMinutes = prefs.getAlarmOffsetMinutes(),
                     useAlarm = _useAlarm.value,
                     attachments = _attachments.value
                 )

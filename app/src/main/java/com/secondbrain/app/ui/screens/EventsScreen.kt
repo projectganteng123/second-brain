@@ -76,8 +76,11 @@ fun EventsScreen(
 ) {
     val isDark = isSystemDark()
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { com.secondbrain.app.util.PrefsManager(context) }
     val notes by repo.getAllActive().collectAsState(initial = emptyList())
-    var range by remember { mutableStateOf(TimeRange.of(RangePreset.MONTH)) }
+    // Rentang bertahan walau keluar halaman/app (tersimpan di prefs)
+    var range by remember { mutableStateOf(restoreTimeRange(prefs, "events")) }
 
     var priorityFilter by remember { mutableStateOf<Priority?>(null) }
     var sort by remember { mutableStateOf(KanbanSort.DATE) }
@@ -169,7 +172,11 @@ fun EventsScreen(
                     Text("Acara", style = MaterialTheme.typography.titleMedium,
                         color = if (isDark) Lavender50 else Lavender800)
                 }
-                TimeRangeSelector(range, { range = it }, isDark)
+                TimeRangeSelector(
+                    range,
+                    { range = it; persistTimeRange(prefs, "events", it) },
+                    isDark
+                )
             }
 
             Spacer(Modifier.height(8.dp))
@@ -201,7 +208,7 @@ fun EventsScreen(
                                 color = if (isDark) Lavender50 else Lavender800, maxLines = 1)
                             Text(
                                 if (ongoing) "Sedang berjalan · ${card.type.label}"
-                                else at.format(DateTimeFormatter.ofPattern("EEE, dd MMM HH:mm", java.util.Locale("id", "ID"))) +
+                                else at.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy HH.mm", java.util.Locale("id", "ID"))) +
                                     " · ${card.type.label}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (ongoing) Mint600 else (if (isDark) Lavender400 else Gray600)
@@ -432,8 +439,8 @@ private fun KanbanCardView(
                     fontWeight = FontWeight.Medium,
                     color = if (isDark) Lavender50 else Lavender800, maxLines = 2)
                 val dateLine = buildString {
-                    card.dates.firstOrNull()?.let { append(it) }
-                    card.startTime?.let { append(" ").append(it) }
+                    card.dates.firstOrNull()?.let { append(com.secondbrain.app.util.TimeFormat.dateMedium(it)) }
+                    card.startTime?.let { append(" ").append(String.format("%02d.%02d", it.hour, it.minute)) }
                     if (card.dates.size > 1) append(" (+${card.dates.size - 1})")
                 }
                 Text(

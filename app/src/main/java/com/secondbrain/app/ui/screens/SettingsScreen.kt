@@ -58,7 +58,8 @@ fun SettingsScreen(
     var geminiEnabled by remember { mutableStateOf(prefs.isProviderEnabled(AIProviderType.GEMINI)) }
     var saved by remember { mutableStateOf(false) }
 
-    var offsetHours by remember { mutableIntStateOf(prefs.getReminderOffsetHours()) }
+    var alarmDefaultOn by remember { mutableStateOf(prefs.isEventAlarmDefaultOn()) }
+    var alarmOffsetMin by remember { mutableIntStateOf(prefs.getAlarmOffsetMinutes()) }
 
     // Export launchers
     val exportJsonLauncher = rememberLauncherForActivityResult(
@@ -91,7 +92,7 @@ fun SettingsScreen(
                 val json = context.contentResolver.openInputStream(uri)
                     ?.bufferedReader()?.readText()
                     ?: throw RuntimeException("File tidak bisa dibaca")
-                val count = repo.importJson(json, prefs.getReminderOffsetHours())
+                val count = repo.importJson(json, prefs.getAlarmOffsetMinutes())
                 runCatching { com.secondbrain.app.notification.ReminderScheduler.scheduleUpcoming(context) }
                 count
             }.onSuccess { snackbar.showSnackbar("Berhasil impor $it catatan") }
@@ -253,24 +254,53 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            // ----- Offset reminder -----
+            // ----- Alarm acara -----
             GlassCard {
-                SectionLabel("pengingat", modifier = Modifier.padding(bottom = 8.dp))
+                SectionLabel("alarm acara", modifier = Modifier.padding(bottom = 8.dp))
                 Text(
-                    "Ingatkan saya berapa jam sebelum kegiatan dimulai (juga ada pengingat saat kegiatan mulai).",
+                    "Saat acara dimulai selalu ada NOTIFIKASI informasi (dengan kata semangat). " +
+                    "ALARM keras berbunyi beberapa menit sebelum acara — hanya bila toggle Alarm " +
+                    "aktif di layar konfirmasi. Atur default toggle & jaraknya di sini.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
                 Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Alarm aktif secara default",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDark) Lavender50 else Lavender800,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = alarmDefaultOn,
+                        onCheckedChange = {
+                            alarmDefaultOn = it
+                            prefs.setEventAlarmDefaultOn(it)
+                        },
+                        colors = SwitchDefaults.colors(checkedTrackColor = Lavender600)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Alarm berbunyi … sebelum acara",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                Spacer(Modifier.height(6.dp))
                 FlowChips(
-                    options = PrefsManager.REMINDER_OFFSET_OPTIONS.map { "$it jam" },
-                    selected = "$offsetHours jam",
+                    options = PrefsManager.ALARM_OFFSET_OPTIONS.map { if (it == 0) "Saat mulai" else "$it mnt" },
+                    selected = if (alarmOffsetMin == 0) "Saat mulai" else "$alarmOffsetMin mnt",
                     isDark = isDark,
                     onSelect = { label ->
-                        val h = label.substringBefore(" ").toIntOrNull() ?: 24
-                        offsetHours = h
-                        prefs.saveReminderOffsetHours(h)
-                        scope.launch { snackbar.showSnackbar("Pengingat $h jam sebelum") }
+                        val m = if (label == "Saat mulai") 0 else label.substringBefore(" ").toIntOrNull() ?: 15
+                        alarmOffsetMin = m
+                        prefs.saveAlarmOffsetMinutes(m)
+                        scope.launch {
+                            snackbar.showSnackbar(
+                                if (m == 0) "Alarm tepat saat acara mulai" else "Alarm $m menit sebelum acara"
+                            )
+                        }
                     }
                 )
             }

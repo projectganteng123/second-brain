@@ -133,7 +133,7 @@ Struktur JSON:
       "participants": ["nama"],
       "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
       "status": "belum_mulai|berjalan|selesai",
-      "preparationTime": "YYYY-MM-DDTHH:mm|null",
+      "preparationTimes": ["YYYY-MM-DDTHH:mm"],
       "useAlarm": false
     }
   ]
@@ -145,8 +145,9 @@ Aturan:
 - Kegiatan BERULANG ("setiap Senin", "tiap bulan tanggal 10"): JANGAN pakai RRULE —
   daftarkan tanggal konkretnya satu per satu di dates, maksimal 90 hari ke depan.
 - Tanggal tanpa jam -> startTime "08:00". Deadline tanpa jam -> "23:59".
-- preparationTime: isi HANYA bila user minta diingatkan persiapan (mis. "ingatkan sehari
-  sebelumnya"); hitung tanggal+jam absolut.
+- preparationTimes: isi HANYA bila user minta diingatkan persiapan (mis. "ingatkan sehari
+  sebelumnya"); hitung tanggal+jam absolut. Boleh LEBIH DARI SATU waktu bila user minta
+  beberapa pengingat; array kosong bila tidak diminta. Tiap waktu akan menjadi alarm.
 - useAlarm: true HANYA bila user minta alarm keras / dibangunkan / jangan sampai terlewat
   (mis. "pakai alarm", "bangunkan saya").
 - Tidak ada kegiatan terjadwal maupun pengingat -> {"schedules": []}.

@@ -181,7 +181,9 @@ fun NoteDetailScreen(
                         })
                     }
                     if (meta.recurrenceDates.isNotEmpty()) {
-                        MetadataRow("Tanggal", meta.recurrenceDates.joinToString(", "))
+                        MetadataRow("Tanggal", meta.recurrenceDates.joinToString(", ") {
+                            com.secondbrain.app.util.TimeFormat.dateMedium(it)
+                        })
                     }
                     if (meta.locations.isNotEmpty()) {
                         MetadataRow("Lokasi", meta.locations.joinToString(", ") { it.value })

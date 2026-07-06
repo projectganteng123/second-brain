@@ -28,7 +28,7 @@ class NoteRepository(
         prioritas: Priority? = null,
         status: NoteStatus? = null,
         source: InputSource = InputSource.TEXT,
-        offsetHours: Int = 24,
+        alarmOffsetMinutes: Int = 15,
         useAlarm: Boolean = false,
         attachments: List<Attachment> = emptyList()
     ): Long {
@@ -44,7 +44,7 @@ class NoteRepository(
         )
         val id = noteDao.insert(entity)
         DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}, alarm=$useAlarm, lampiran=${attachments.size}\nmetadata=$metaJson")
-        generateReminders(id, metadata, offsetHours, useAlarm)
+        generateReminders(id, metadata, alarmOffsetMinutes, useAlarm)
         return id
     }
 
@@ -62,7 +62,7 @@ class NoteRepository(
         return noteDao.insert(entity)
     }
 
-    suspend fun updateMetadata(id: Long, metadata: Metadata, offsetHours: Int = 24) {
+    suspend fun updateMetadata(id: Long, metadata: Metadata, alarmOffsetMinutes: Int = 15) {
         val existing = noteDao.getById(id) ?: return
         noteDao.update(existing.copy(
             metadataJson = gson.toJson(metadata),
@@ -70,15 +70,15 @@ class NoteRepository(
             updatedAt = System.currentTimeMillis()
         ))
         reminderDao.deleteByNote(id)
-        generateReminders(id, metadata, offsetHours, existing.useAlarm)
+        generateReminders(id, metadata, alarmOffsetMinutes, existing.useAlarm)
     }
 
-    suspend fun setUseAlarm(id: Long, useAlarm: Boolean, offsetHours: Int) {
+    suspend fun setUseAlarm(id: Long, useAlarm: Boolean, alarmOffsetMinutes: Int) {
         val existing = noteDao.getById(id) ?: return
         noteDao.update(existing.copy(useAlarm = useAlarm, updatedAt = System.currentTimeMillis()))
         val meta = metadataFrom(existing) ?: return
         reminderDao.deleteByNote(id)
-        generateReminders(id, meta, offsetHours, useAlarm)
+        generateReminders(id, meta, alarmOffsetMinutes, useAlarm)
     }
 
     suspend fun update(note: NoteEntity) = noteDao.update(note)
@@ -99,7 +99,7 @@ class NoteRepository(
      * (restore), selebihnya digabung. Reminder dibuat ulang untuk catatan aktif yang
      * jadwalnya masih di masa depan. Mengembalikan jumlah catatan yang diimpor.
      */
-    suspend fun importJson(json: String, offsetHours: Int = 24): Int {
+    suspend fun importJson(json: String, alarmOffsetMinutes: Int = 15): Int {
         val type = object : com.google.gson.reflect.TypeToken<List<NoteEntity>>() {}.type
         val notes: List<NoteEntity> = gson.fromJson(json, type)
             ?: throw RuntimeException("File tidak berisi data catatan yang valid.")
@@ -111,7 +111,7 @@ class NoteRepository(
                 val meta = metadataFrom(n)
                 if (meta != null) {
                     reminderDao.deleteByNote(n.id)
-                    generateReminders(n.id, meta, offsetHours, n.useAlarm)
+                    generateReminders(n.id, meta, alarmOffsetMinutes, n.useAlarm)
                 }
             }
         }
@@ -146,7 +146,7 @@ class NoteRepository(
                 .append(esc(m?.entities?.organizations?.joinToString("; "))).append(',')
                 .append(esc(m?.keywords?.joinToString("; "))).append(',')
                 .append(esc(actionsStr)).append(',')
-                .append(esc(m?.preparationTime)).append(',')
+                .append(esc(m?.preparationTimesEffective()?.joinToString("; "))).append(',')
                 .append(esc(m?.priority)).append(',')
                 .append(esc(m?.status)).append(',')
                 .append(esc(n.prioritas)).append(',')
@@ -298,13 +298,15 @@ class NoteRepository(
         }
     }
 
-    private suspend fun generateReminders(noteId: Long, metadata: Metadata, offsetHours: Int, useAlarm: Boolean) {
+    private suspend fun generateReminders(noteId: Long, metadata: Metadata, alarmOffsetMinutes: Int, useAlarm: Boolean) {
         val reminders = mutableListOf<ReminderEntity>()
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE
         val nowMillis = System.currentTimeMillis()
 
-        // Pengingat offset + saat-mulai untuk satu kegiatan (dipakai jadwal utama & kegiatan tambahan)
-        fun addEventReminders(title: String, dates: List<String>, startTime: String?, alarm: Boolean) {
+        // Per kegiatan per tanggal:
+        // 1) ALARM X menit sebelum mulai — hanya bila toggle alarm catatan aktif
+        // 2) NOTIFIKASI informasi + kata semangat tepat saat mulai — selalu, bukan alarm
+        fun addEventReminders(title: String, dates: List<String>, startTime: String?) {
             for (dateStr in dates) {
                 val date = runCatching { LocalDate.parse(dateStr, fmt) }.getOrNull() ?: continue
 
@@ -314,43 +316,44 @@ class NoteRepository(
 
                 val eventMillis = LocalDateTime.of(date, eventTime).toEpochMilli()
 
-                // Pengingat X jam sebelum kegiatan (sesuai pengaturan user)
-                val offsetMillis = eventMillis - offsetHours * 60L * 60L * 1000L
-                if (offsetMillis > nowMillis) {
-                    reminders.add(ReminderEntity(
-                        noteId = noteId,
-                        remindAt = offsetMillis,
-                        message = "Dalam $offsetHours jam: $title",
-                        isAlarm = alarm
-                    ))
+                if (useAlarm) {
+                    val alarmAt = eventMillis - alarmOffsetMinutes * 60_000L
+                    if (alarmAt > nowMillis) {
+                        reminders.add(ReminderEntity(
+                            noteId = noteId,
+                            remindAt = alarmAt,
+                            message = if (alarmOffsetMinutes == 0) "Sekarang: $title"
+                                      else "$alarmOffsetMinutes menit lagi: $title",
+                            isAlarm = true
+                        ))
+                    }
                 }
 
-                // Pengingat saat kegiatan dimulai
                 if (eventMillis > nowMillis) {
+                    val jam = String.format("%02d.%02d", eventTime.hour, eventTime.minute)
                     reminders.add(ReminderEntity(
                         noteId = noteId,
                         remindAt = eventMillis,
-                        message = title,
-                        isAlarm = alarm
+                        message = "$title · $jam — ${MOTIVATION.random()}",
+                        isAlarm = false
                     ))
                 }
             }
         }
 
-        addEventReminders(metadata.title, metadata.recurrenceDates, metadata.startTime, useAlarm)
+        addEventReminders(metadata.title, metadata.recurrenceDates, metadata.startTime)
 
-        // Kegiatan ke-2 dst. dalam catatan yang sama tetap mendapat pengingat
+        // Kegiatan ke-2 dst. dalam catatan yang sama mendapat perlakuan yang sama
         for (ex in metadata.extraSchedules.orEmpty()) {
             addEventReminders(
                 title = ex.title.orEmpty().ifBlank { metadata.title },
                 dates = ex.dates.orEmpty(),
-                startTime = ex.startTime,
-                alarm = useAlarm || ex.useAlarm
+                startTime = ex.startTime
             )
         }
 
-        // Pengingat persiapan (waktu absolut), hanya jika diminta user pada catatan
-        metadata.preparationTime?.let { prep ->
+        // Waktu persiapan (boleh lebih dari satu) — SELALU alarm
+        for (prep in metadata.preparationTimesEffective()) {
             val prepMillis = runCatching {
                 LocalDateTime.parse(prep, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")).toEpochMilli()
             }.getOrNull()
@@ -359,17 +362,29 @@ class NoteRepository(
                     noteId = noteId,
                     remindAt = prepMillis,
                     message = "Persiapan: ${metadata.title}",
-                    isAlarm = useAlarm
+                    isAlarm = true
                 ))
             }
         }
 
         if (reminders.isNotEmpty()) {
             reminderDao.insertAll(reminders)
-            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (offset=$offsetHours jam, alarm=$useAlarm)")
+            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (alarm offset=$alarmOffsetMinutes mnt, alarm=$useAlarm)")
         }
     }
 
     private fun LocalDateTime.toEpochMilli(): Long =
         this.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    companion object {
+        /** Kata semangat untuk notifikasi informasi saat acara dimulai. */
+        private val MOTIVATION = listOf(
+            "Semangat, kamu pasti bisa! 💪",
+            "Saatnya bersinar ✨",
+            "Selesaikan dengan tenang 🌿",
+            "Kamu sudah siap untuk ini 🚀",
+            "Satu langkah lagi, gas! 🎯",
+            "Fokus sebentar, hasilnya panjang 🌱"
+        )
+    }
 }

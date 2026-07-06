@@ -23,6 +23,7 @@ object ReminderScheduler {
             alarmManager.canScheduleExactAlarms() else true
 
         DebugLog.log("Alarm ⏰ jadwal", "${upcoming.size} pengingat, exactDiizinkan=$canExact")
+        var needExactPermission = false
 
         for (reminder in upcoming) {
             val intent = Intent(context, ReminderReceiver::class.java).apply {
@@ -50,13 +51,47 @@ object ReminderScheduler {
                 } else if (canExact) {
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminder.remindAt, pi)
                 } else {
-                    // Tanpa izin exact: gunakan inexact agar tetap muncul (mungkin sedikit meleset)
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminder.remindAt, pi)
+                    // TANPA jalur tidak-presisi: pengingat presisi butuh izin — beri tahu pengguna.
+                    needExactPermission = true
+                    DebugLog.log("Alarm ✕ izin", "id=${reminder.id} dilewati: izin exact alarm belum diberikan")
                 }
             } catch (e: SecurityException) {
                 DebugLog.log("Alarm ✕", "Gagal jadwalkan id=${reminder.id}: ${e.message}")
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, reminder.remindAt, pi)
+                needExactPermission = true
             }
         }
+
+        if (needExactPermission) notifyPermissionNeeded(context)
     }
+
+    /** Notifikasi (id tetap → tidak menumpuk) yang mengantar pengguna ke setelan izin. */
+    private fun notifyPermissionNeeded(context: Context) {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channel = android.app.NotificationChannel(
+            ReminderReceiver.CHANNEL_ID, "Pengingat",
+            android.app.NotificationManager.IMPORTANCE_HIGH
+        )
+        manager.createNotificationChannel(channel)
+
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                .setData(android.net.Uri.parse("package:${context.packageName}"))
+        } else Intent(context, MainActivity::class.java)
+        val pi = PendingIntent.getActivity(
+            context, PERMISSION_NOTIF_ID, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notif = androidx.core.app.NotificationCompat.Builder(context, ReminderReceiver.CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Pengingat butuh izin")
+            .setContentText("Beri izin \"Alarm & pengingat\" agar notifikasi acara tampil tepat waktu. Ketuk untuk membuka setelan.")
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle())
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        manager.notify(PERMISSION_NOTIF_ID, notif)
+    }
+
+    private const val PERMISSION_NOTIF_ID = 990001
 }
