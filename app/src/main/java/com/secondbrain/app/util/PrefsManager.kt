@@ -3,6 +3,7 @@ package com.secondbrain.app.util
 import android.content.Context
 import androidx.core.content.edit
 import com.secondbrain.app.ai.AIProviderType
+import com.secondbrain.app.ai.ExtractionKind
 
 class PrefsManager(context: Context) {
     private val prefs = context.getSharedPreferences("secondbrain_prefs", Context.MODE_PRIVATE)
@@ -47,10 +48,13 @@ class PrefsManager(context: Context) {
     fun saveReminderOffsetHours(hours: Int) = prefs.edit { putInt(KEY_REMINDER_OFFSET, hours) }
     fun getReminderOffsetHours(): Int = prefs.getInt(KEY_REMINDER_OFFSET, 24)
 
-    /** Template prompt ekstraksi kustom. Kosong = pakai default. */
-    fun saveCustomPrompt(template: String) = prefs.edit { putString(KEY_CUSTOM_PROMPT, template) }
-    fun getCustomPrompt(): String = prefs.getString(KEY_CUSTOM_PROMPT, "") ?: ""
-    fun clearCustomPrompt() = prefs.edit { remove(KEY_CUSTOM_PROMPT) }
+    /** Template prompt ekstraksi kustom per jenis (Universal/Keuangan/Acara). Kosong = default. */
+    fun saveExtractionPrompt(kind: ExtractionKind, template: String) =
+        prefs.edit { putString(promptKey(kind), template) }
+    fun getExtractionPrompt(kind: ExtractionKind): String =
+        prefs.getString(promptKey(kind), "") ?: ""
+    fun clearExtractionPrompt(kind: ExtractionKind) = prefs.edit { remove(promptKey(kind)) }
+    private fun promptKey(kind: ExtractionKind): String = "custom_prompt_" + kind.name.lowercase()
 
     /** Template capture yang aktif saat layar input dibuka (null = tidak ada). */
     fun saveDefaultTemplateId(id: String?) = prefs.edit {
@@ -74,7 +78,6 @@ class PrefsManager(context: Context) {
 
     companion object {
         private const val KEY_REMINDER_OFFSET = "reminder_offset_hours"
-        private const val KEY_CUSTOM_PROMPT = "custom_extraction_prompt"
         private const val KEY_DEFAULT_TEMPLATE = "default_template_id"
         private const val KEY_VOICE_TRIGGER_ENABLED = "voice_trigger_enabled"
         private const val KEY_VOICE_TRIGGER_WORD = "voice_trigger_word"

@@ -146,6 +146,20 @@ fun PreviewScreen(
                     )
                 }
 
+                val extraSchedules = editedMetadata.extraSchedules.orEmpty()
+                if (extraSchedules.isNotEmpty()) {
+                    MetadataRow(
+                        "Kegiatan lain",
+                        extraSchedules.joinToString("\n") { it.displayLine() } +
+                            "\n(masing-masing tetap dibuatkan pengingat)"
+                    )
+                }
+
+                val transactions = editedMetadata.transactions.orEmpty()
+                if (transactions.isNotEmpty()) {
+                    MetadataRow("Transaksi", transactions.joinToString("\n") { it.displayLine() })
+                }
+
                 if (editedMetadata.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(

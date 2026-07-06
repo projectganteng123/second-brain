@@ -14,14 +14,13 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
 
     private val gson = GsonProvider.gson
 
-    override suspend fun extractMetadata(rawText: String, currentDateTime: String): Result<Metadata> =
+    override suspend fun generateJson(prompt: String): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val prompt = buildExtractionPrompt(rawText, currentDateTime)
                 DebugLog.log("AI → request", "model=${config.model}\n$prompt")
                 val responseText = callGemini(prompt, jsonOutput = true)
                 DebugLog.log("AI ← response", responseText)
-                MetadataParser.parse(responseText)
+                responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
@@ -160,12 +159,6 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             in 500..599 -> "Server Gemini sedang bermasalah ($status). Coba lagi nanti."
             else -> "Gagal ($status): ${apiMessage ?: body.take(200)}"
         }
-    }
-
-    private fun buildExtractionPrompt(rawText: String, currentDateTime: String): String {
-        val template = config.extractionPromptTemplate?.takeIf { it.isNotBlank() }
-            ?: PromptTemplates.DEFAULT_EXTRACTION
-        return PromptTemplates.fill(template, currentDateTime, rawText)
     }
 
     private fun buildQAPrompt(question: String, contextNotes: List<String>): String =

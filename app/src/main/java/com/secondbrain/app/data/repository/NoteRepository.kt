@@ -272,36 +272,50 @@ class NoteRepository(
         val fmt = DateTimeFormatter.ISO_LOCAL_DATE
         val nowMillis = System.currentTimeMillis()
 
-        for (dateStr in metadata.recurrenceDates) {
-            val date = runCatching { LocalDate.parse(dateStr, fmt) }.getOrNull() ?: continue
+        // Pengingat offset + saat-mulai untuk satu kegiatan (dipakai jadwal utama & kegiatan tambahan)
+        fun addEventReminders(title: String, dates: List<String>, startTime: String?, alarm: Boolean) {
+            for (dateStr in dates) {
+                val date = runCatching { LocalDate.parse(dateStr, fmt) }.getOrNull() ?: continue
 
-            val eventTime = metadata.startTime?.let {
-                runCatching { LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull()
-            } ?: LocalTime.of(8, 0)
+                val eventTime = startTime?.let {
+                    runCatching { LocalTime.parse(it, DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull()
+                } ?: LocalTime.of(8, 0)
 
-            val eventDateTime = LocalDateTime.of(date, eventTime)
-            val eventMillis = eventDateTime.toEpochMilli()
+                val eventMillis = LocalDateTime.of(date, eventTime).toEpochMilli()
 
-            // Pengingat X jam sebelum kegiatan (sesuai pengaturan user)
-            val offsetMillis = eventMillis - offsetHours * 60L * 60L * 1000L
-            if (offsetMillis > nowMillis) {
-                reminders.add(ReminderEntity(
-                    noteId = noteId,
-                    remindAt = offsetMillis,
-                    message = "Dalam $offsetHours jam: ${metadata.title}",
-                    isAlarm = useAlarm
-                ))
+                // Pengingat X jam sebelum kegiatan (sesuai pengaturan user)
+                val offsetMillis = eventMillis - offsetHours * 60L * 60L * 1000L
+                if (offsetMillis > nowMillis) {
+                    reminders.add(ReminderEntity(
+                        noteId = noteId,
+                        remindAt = offsetMillis,
+                        message = "Dalam $offsetHours jam: $title",
+                        isAlarm = alarm
+                    ))
+                }
+
+                // Pengingat saat kegiatan dimulai
+                if (eventMillis > nowMillis) {
+                    reminders.add(ReminderEntity(
+                        noteId = noteId,
+                        remindAt = eventMillis,
+                        message = title,
+                        isAlarm = alarm
+                    ))
+                }
             }
+        }
 
-            // Pengingat saat kegiatan dimulai
-            if (eventMillis > nowMillis) {
-                reminders.add(ReminderEntity(
-                    noteId = noteId,
-                    remindAt = eventMillis,
-                    message = metadata.title,
-                    isAlarm = useAlarm
-                ))
-            }
+        addEventReminders(metadata.title, metadata.recurrenceDates, metadata.startTime, useAlarm)
+
+        // Kegiatan ke-2 dst. dalam catatan yang sama tetap mendapat pengingat
+        for (ex in metadata.extraSchedules.orEmpty()) {
+            addEventReminders(
+                title = ex.title.orEmpty().ifBlank { metadata.title },
+                dates = ex.dates.orEmpty(),
+                startTime = ex.startTime,
+                alarm = useAlarm || ex.useAlarm
+            )
         }
 
         // Pengingat persiapan (waktu absolut), hanya jika diminta user pada catatan

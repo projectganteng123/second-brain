@@ -26,6 +26,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import com.secondbrain.app.ai.AIProviderType
+import com.secondbrain.app.ai.ExtractionKind
 import com.secondbrain.app.ai.PromptTemplates
 import com.secondbrain.app.capture.SttSession
 import com.secondbrain.app.capture.VoiceTriggerController
@@ -137,13 +138,6 @@ fun SettingsScreen(
         ) startTriggerTest()
         else micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
-
-    // Custom prompt: tampilkan default sebagai titik awal bila belum pernah diubah
-    var promptText by remember {
-        mutableStateOf(prefs.getCustomPrompt().ifBlank { PromptTemplates.DEFAULT_EXTRACTION })
-    }
-    var promptSaved by remember { mutableStateOf(false) }
-    var promptError by remember { mutableStateOf<String?>(null) }
 
     val bgColor = if (isDark) Lavender900 else Gray50
 
@@ -481,67 +475,19 @@ fun SettingsScreen(
                 ) {
                     Icon(Icons.Outlined.Warning, null, modifier = Modifier.size(16.dp), tint = Lemon600)
                     Text(
-                        "PERINGATAN: Mengubah prompt bisa membuat ekstraksi GAGAL jika AI tidak lagi " +
+                        "Tiap catatan diproses TIGA prompt paralel — Universal (info umum + action items), " +
+                        "Keuangan (transaksi), Acara (jadwal + pengingat/alarm) — lalu hasilnya digabung. " +
+                        "PERINGATAN: mengubah prompt bisa membuat ekstraksi GAGAL jika AI tidak lagi " +
                         "mengembalikan JSON dengan field yang dibutuhkan app. Wajib pertahankan placeholder " +
-                        "{now} dan {note}, serta struktur JSON-nya. Ubah hanya jika kamu paham.",
+                        "{note} (semua prompt) dan {now} (prompt Acara), serta struktur JSON-nya.",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (isDark) Lemon200 else Lemon800
                     )
                 }
 
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = promptText,
-                    onValueChange = { promptText = it; promptSaved = false; promptError = null },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Lavender400,
-                        unfocusedBorderColor = if (isDark) GlassBorderDark else Lavender200,
-                        focusedContainerColor = if (isDark) GlassDark else GlassLight,
-                        unfocusedContainerColor = if (isDark) GlassDark else GlassLight,
-                        focusedTextColor = if (isDark) Lavender50 else Lavender800,
-                        unfocusedTextColor = if (isDark) Lavender50 else Lavender800
-                    )
-                )
-
-                promptError?.let {
-                    Spacer(Modifier.height(6.dp))
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = Rose600)
-                }
-
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    GlassButton(
-                        text = if (promptSaved) "Tersimpan" else "Simpan prompt",
-                        icon = if (promptSaved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
-                        onClick = {
-                            when {
-                                !promptText.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
-                                    promptError = "Prompt harus memuat placeholder {note} (teks catatan)."
-                                !promptText.contains(PromptTemplates.PLACEHOLDER_NOW) ->
-                                    promptError = "Prompt harus memuat placeholder {now} (waktu sekarang)."
-                                else -> {
-                                    prefs.saveCustomPrompt(promptText.trim())
-                                    promptSaved = true
-                                    promptError = null
-                                }
-                            }
-                        },
-                        accent = !promptSaved,
-                        modifier = Modifier.weight(1f)
-                    )
-                    GlassButton(
-                        text = "Reset",
-                        icon = Icons.Outlined.RestartAlt,
-                        onClick = {
-                            prefs.clearCustomPrompt()
-                            promptText = PromptTemplates.DEFAULT_EXTRACTION
-                            promptSaved = false
-                        }
-                    )
-                }
+                PromptEditor(ExtractionKind.UNIVERSAL, prefs, isDark)
+                PromptEditor(ExtractionKind.FINANCE, prefs, isDark)
+                PromptEditor(ExtractionKind.SCHEDULE, prefs, isDark)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -669,6 +615,84 @@ private fun FlowChips(
                             else (if (isDark) Lavender400 else Gray600)
                 )
             }
+        }
+    }
+}
+
+/** Editor satu template prompt ekstraksi, dilipat per jenis agar layar tidak penuh. */
+@Composable
+private fun PromptEditor(kind: ExtractionKind, prefs: PrefsManager, isDark: Boolean) {
+    var expanded by remember { mutableStateOf(false) }
+    var text by remember {
+        mutableStateOf(prefs.getExtractionPrompt(kind).ifBlank { PromptTemplates.defaultFor(kind) })
+    }
+    var saved by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { expanded = !expanded }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "Prompt ${kind.label}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDark) Lavender50 else Lavender800,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+            null, modifier = Modifier.size(18.dp),
+            tint = if (isDark) Lavender400 else Gray400
+        )
+    }
+    if (expanded) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it; saved = false; error = null },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp, max = 320.dp),
+            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            shape = RoundedCornerShape(12.dp),
+            colors = settingsFieldColors(isDark)
+        )
+        error?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall, color = Rose600)
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassButton(
+                text = if (saved) "Tersimpan" else "Simpan",
+                icon = if (saved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
+                onClick = {
+                    when {
+                        !text.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
+                            error = "Prompt harus memuat placeholder {note} (teks catatan)."
+                        kind == ExtractionKind.SCHEDULE && !text.contains(PromptTemplates.PLACEHOLDER_NOW) ->
+                            error = "Prompt Acara harus memuat placeholder {now} (waktu sekarang)."
+                        else -> {
+                            prefs.saveExtractionPrompt(kind, text.trim())
+                            saved = true
+                            error = null
+                        }
+                    }
+                },
+                accent = !saved,
+                modifier = Modifier.weight(1f)
+            )
+            GlassButton(
+                text = "Reset",
+                icon = Icons.Outlined.RestartAlt,
+                onClick = {
+                    prefs.clearExtractionPrompt(kind)
+                    text = PromptTemplates.defaultFor(kind)
+                    saved = false
+                    error = null
+                }
+            )
         }
     }
 }

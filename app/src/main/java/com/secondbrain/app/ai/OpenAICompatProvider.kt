@@ -2,7 +2,6 @@ package com.secondbrain.app.ai
 
 import com.google.gson.JsonParser
 import com.secondbrain.app.data.GsonProvider
-import com.secondbrain.app.data.model.Metadata
 import com.secondbrain.app.util.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,8 +16,7 @@ import java.net.URL
 class OpenAICompatProvider(
     private val type: AIProviderType,
     private val apiKey: String,
-    private val model: String,
-    private val extractionPromptTemplate: String? = null
+    private val model: String
 ) : AIProvider {
 
     private val gson = GsonProvider.gson
@@ -30,16 +28,13 @@ class OpenAICompatProvider(
         AIProviderType.GEMINI -> throw IllegalArgumentException("Gemini memakai GeminiProvider")
     }
 
-    override suspend fun extractMetadata(rawText: String, currentDateTime: String): Result<Metadata> =
+    override suspend fun generateJson(prompt: String): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
-                val template = extractionPromptTemplate?.takeIf { it.isNotBlank() }
-                    ?: PromptTemplates.DEFAULT_EXTRACTION
-                val prompt = PromptTemplates.fill(template, currentDateTime, rawText)
                 DebugLog.log("AI → request", "provider=$name model=$model\n$prompt")
                 val responseText = call(prompt, jsonOutput = true)
                 DebugLog.log("AI ← response", responseText)
-                MetadataParser.parse(responseText)
+                responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
@@ -62,7 +57,7 @@ class OpenAICompatProvider(
             append("\"temperature\": 0.1, ")
             append("\"max_completion_tokens\": 8192")
             // JSON mode hanya untuk Groq; dukungan json_object di Cerebras belum merata
-            // di semua model. MetadataParser sudah toleran terhadap teks di sekitar JSON.
+            // di semua model. ExtractionParser sudah toleran terhadap teks di sekitar JSON.
             if (jsonOutput && type == AIProviderType.GROQ) {
                 append(", \"response_format\": {\"type\": \"json_object\"}")
             }

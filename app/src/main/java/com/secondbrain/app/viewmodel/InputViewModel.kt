@@ -83,6 +83,8 @@ class InputViewModel(
                     if (!userTouchedStatus) {
                         NoteStatus.fromString(meta.status)?.let { _selectedStatus.value = it }
                     }
+                    // Rekomendasi AI: pra-centang alarm (user tetap bisa mematikan di Preview)
+                    if (meta.suggestAlarm) _useAlarm.value = true
                     _uiState.value = InputUiState.Preview(meta)
                 }
                 .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }

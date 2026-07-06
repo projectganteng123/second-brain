@@ -204,6 +204,14 @@ fun NoteDetailScreen(
                             }
                         })
                     }
+                    val extraSchedules = meta.extraSchedules.orEmpty()
+                    if (extraSchedules.isNotEmpty()) {
+                        MetadataRow("Kegiatan lain", extraSchedules.joinToString("\n") { it.displayLine() })
+                    }
+                    val transactions = meta.transactions.orEmpty()
+                    if (transactions.isNotEmpty()) {
+                        MetadataRow("Transaksi", transactions.joinToString("\n") { it.displayLine() })
+                    }
                     if (meta.summary.isNotBlank()) {
                         Spacer(Modifier.height(6.dp))
                         Text(
