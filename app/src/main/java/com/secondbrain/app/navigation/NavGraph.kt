@@ -27,6 +27,8 @@ sealed class Screen(val route: String) {
     object Archive   : Screen("archive")
     object ActionItems : Screen("actionitems")
     object Gantt     : Screen("gantt")
+    object Events    : Screen("events")
+    object Finance   : Screen("finance")
     object Detail    : Screen("detail/{noteId}") {
         fun go(noteId: Long) = "detail/$noteId"
     }
@@ -61,12 +63,29 @@ fun NavGraph(
                 onAskClick = { navController.navigate(Screen.Qa.route) },
                 onSettingsClick = { navController.navigate(Screen.Settings.route) },
                 onAllNotesClick = { navController.navigate(Screen.AllNotes.route) },
-                onGanttClick = { navController.navigate(Screen.Gantt.route) }
+                onEventsClick = { navController.navigate(Screen.Events.route) },
+                onFinanceClick = { navController.navigate(Screen.Finance.route) }
             )
         }
 
         composable(Screen.Gantt.route) {
             GanttScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.Events.route) {
+            EventsScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.Finance.route) {
+            FinanceScreen(
                 repo = repo,
                 onBack = { navController.popBackStack() },
                 onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }

@@ -170,7 +170,38 @@ class NoteRepository(
                     action = act.action,
                     owner = act.owner,
                     deadline = act.deadline,
-                    done = note.status == NoteStatus.SELESAI.name
+                    done = act.done || note.status == NoteStatus.SELESAI.name
+                )
+            }
+        }
+
+    /** Tandai satu action item selesai/belum (indeks pada daftar actions di metadata). */
+    suspend fun setActionDone(noteId: Long, actionIndex: Int, done: Boolean) {
+        val note = noteDao.getById(noteId) ?: return
+        val meta = metadataFrom(note) ?: return
+        val actions = meta.actions.toMutableList()
+        if (actionIndex !in actions.indices) return
+        actions[actionIndex] = actions[actionIndex].copy(done = done)
+        noteDao.update(note.copy(
+            metadataJson = gson.toJson(meta.copy(actions = actions)),
+            updatedAt = System.currentTimeMillis()
+        ))
+    }
+
+    /** Semua transaksi lintas catatan aktif, untuk halaman Keuangan. */
+    fun allTransactions(allNotes: List<NoteEntity>): List<TransactionRef> =
+        allNotes.flatMap { note ->
+            val meta = metadataFrom(note)
+            meta?.transactions.orEmpty().map { tx ->
+                val date = tx.date?.let {
+                    runCatching { LocalDate.parse(it, DateTimeFormatter.ISO_LOCAL_DATE) }.getOrNull()
+                } ?: java.time.Instant.ofEpochMilli(note.createdAt)
+                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+                TransactionRef(
+                    noteId = note.id,
+                    noteTitle = meta?.title?.ifBlank { note.rawText.take(40) } ?: note.rawText.take(40),
+                    tx = tx,
+                    date = date
                 )
             }
         }

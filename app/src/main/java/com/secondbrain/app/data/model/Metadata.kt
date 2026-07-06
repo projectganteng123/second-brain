@@ -95,7 +95,18 @@ data class Entities(
 data class ActionItem(
     val action: String = "",
     val owner: String? = null,
-    val deadline: String? = null
+    val deadline: String? = null,
+    /** Dicentang user (kanban/daftar aksi). Boolean primitif → catatan lama aman (false). */
+    val done: Boolean = false
+)
+
+/** Transaksi beserta acuan ke catatan induknya (untuk halaman Keuangan).
+ *  [date] = tanggal transaksi, fallback tanggal catatan dibuat bila AI tidak mengisi. */
+data class TransactionRef(
+    val noteId: Long,
+    val noteTitle: String,
+    val tx: Transaction,
+    val date: java.time.LocalDate
 )
 
 /** Action item beserta acuan ke catatan induknya (untuk layar agregasi). */
