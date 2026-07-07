@@ -62,7 +62,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun InputScreen(
     vm: InputViewModel,
-    onBack: () -> Unit,
+    onOpenList: () -> Unit,
+    onAsk: () -> Unit,
     onSaved: () -> Unit
 ) {
     val isDark = isSystemDark()
@@ -81,8 +82,6 @@ fun InputScreen(
             controller.onValueChange(TextFieldValue(t, androidx.compose.ui.text.TextRange(t.length)))
         }
     }
-
-    var selectedTemplate by remember { mutableStateOf(CaptureTemplates.byId(prefs.getDefaultTemplateId())) }
 
     var recording by remember { mutableStateOf(false) }
     var cuePhase by remember { mutableStateOf<SttSession.Phase>(SttSession.Phase.Preparing) }
@@ -317,61 +316,24 @@ fun InputScreen(
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
                 .verticalScroll(rememberScrollState())
+                .imePadding()   // area teks tidak tertutup keyboard
         ) {
             Spacer(Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Outlined.ArrowBack, "Kembali", tint = if (isDark) Lavender200 else Lavender600)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onOpenList) {
+                    Icon(Icons.Outlined.Menu, "Daftar catatan",
+                        tint = if (isDark) Lavender200 else Lavender600)
                 }
                 Text("Catatan baru", style = MaterialTheme.typography.titleMedium,
                     color = if (isDark) Lavender50 else Lavender800)
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // ----- Pemilih template -----
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SectionLabel("pemandu (opsional)")
-                if (selectedTemplate != null) {
-                    val isDefault = prefs.getDefaultTemplateId() == selectedTemplate!!.id
-                    TextButton(onClick = {
-                        prefs.saveDefaultTemplateId(if (isDefault) null else selectedTemplate!!.id)
-                    }) {
-                        Icon(
-                            if (isDefault) Icons.Outlined.Star else Icons.Outlined.StarBorder,
-                            null, modifier = Modifier.size(15.dp), tint = Lavender600
-                        )
-                        Spacer(Modifier.width(3.dp))
-                        Text(if (isDefault) "Default" else "Jadikan default",
-                            style = MaterialTheme.typography.labelSmall, color = Lavender600)
-                    }
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip("Bebas", selectedTemplate == null, isDark) { selectedTemplate = null }
-                CaptureTemplates.BUILT_IN.forEach { t ->
-                    Chip(t.name, selectedTemplate?.id == t.id, isDark) { selectedTemplate = t }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onAsk) {
+                    Icon(Icons.Outlined.AutoAwesome, "Tanya AI",
+                        tint = if (isDark) Lavender200 else Lavender600)
                 }
             }
 
-            // ----- Tombol pertanyaan -----
-            selectedTemplate?.let { tpl ->
-                Spacer(Modifier.height(10.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    tpl.questions.forEach { q ->
-                        GlassButton(
-                            text = q,
-                            icon = Icons.Outlined.Mic,
-                            onClick = { requestCapture(q) }
-                        )
-                    }
-                }
-            }
+            // (Pemandu template disembunyikan sementara — akan diperbaiki nanti.)
 
             Spacer(Modifier.height(12.dp))
 
@@ -472,7 +434,7 @@ fun InputScreen(
                 onValueChange = { controller.onValueChange(it); vm.updateText(it.text) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 placeholder = {
-                    Text("Ketik, rekam bebas, atau ketuk tombol pemandu di atas…",
+                    Text("Ketik, rekam suara, atau kirim gambar/file…",
                         color = if (isDark) Lavender400.copy(0.5f) else Gray400)
                 },
                 visualTransformation = transform,
@@ -677,7 +639,7 @@ private val APP_TIPS = listOf(
     "Bilang \"pakai alarm\" atau \"bangunkan saya\" supaya toggle alarm menyala otomatis.",
     "Minta persiapan: \"ingatkan sehari sebelumnya\" — jadi alarm persiapan tersendiri.",
     "Beberapa kegiatan dalam satu catatan? Semuanya tetap dibuatkan pengingat.",
-    "Tombol pemandu di atas membantu menjawab per bagian supaya tidak ada yang terlewat.",
+    "Geser layar ke kanan untuk melihat, mencari, dan memfilter semua catatanmu.",
     "Ketuk ikon ✨ di dashboard untuk bertanya ke catatanmu, mis. \"minggu ini ada apa?\".",
     "Ekspor JSON rutin di Pengaturan — pilih Google Drive agar cadangan aman.",
     "Punya ≥2 API key (boleh provider sama) membuat ekstraksi paralel bebas limit per menit."
@@ -810,6 +772,7 @@ private fun VoiceTriggerStatus(
 ) {
     val continuing = state == VoiceTriggerController.State.Continuing
     val captured = state == VoiceTriggerController.State.Captured
+    val stopped = state == VoiceTriggerController.State.Stopped
     val heard = (state as? VoiceTriggerController.State.Waiting)?.triggerHeard == true
     val bg = when {
         continuing -> if (isDark) Peach600.copy(0.25f) else Peach200.copy(0.5f)
@@ -826,9 +789,10 @@ private fun VoiceTriggerStatus(
         val (icon, text, tint) = when {
             !hasPermission -> Triple(Icons.Outlined.MicOff, "Izinkan mikrofon untuk kata pemicu", Lemon600)
             muted -> Triple(Icons.Outlined.HearingDisabled, "Kata pemicu dijeda", if (isDark) Lavender400 else Gray400)
-            state is VoiceTriggerController.State.Unavailable -> Triple(Icons.Outlined.ErrorOutline, state.message, Rose600)
             continuing -> Triple(Icons.Outlined.GraphicEq, "Kata pemicu terdengar — ucapkan isinya…", Peach600)
             captured -> Triple(Icons.Outlined.CheckCircle, "Tertangkap — tambah lewat tombol mic", Sky600)
+            stopped -> Triple(Icons.Outlined.HearingDisabled, "Tidak ada kata pemicu — berhenti mendengar",
+                if (isDark) Lavender400 else Gray600)
             heard -> Triple(Icons.Outlined.Hearing, "Kata pemicu terdengar…", Sky600)
             state is VoiceTriggerController.State.Waiting ->
                 Triple(Icons.Outlined.Hearing, "Menunggu \"$triggerWord\"…", if (isDark) Lavender400 else Gray600)
@@ -842,7 +806,7 @@ private fun VoiceTriggerStatus(
             modifier = if (!hasPermission) Modifier.weight(1f).clickable(onClick = onRequestPermission)
                        else Modifier.weight(1f)
         )
-        if (captured && !muted) {
+        if ((captured || stopped) && !muted && hasPermission) {
             TextButton(onClick = onRearm, contentPadding = PaddingValues(horizontal = 8.dp)) {
                 Text("Dengar lagi", style = MaterialTheme.typography.labelSmall, color = Sky600)
             }
@@ -910,7 +874,7 @@ private fun TipBox(isDark: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Icon(Icons.Outlined.Lightbulb, null, tint = Sky600, modifier = Modifier.size(16.dp))
-        Text("Ketuk tombol pemandu untuk menjawab per bagian, atau catat bebas. Sebutkan waktu, orang, tempat agar AI akurat.",
+        Text("Catat bebas — sebutkan waktu, orang, tempat, dan harga agar AI akurat. Geser ke kanan untuk melihat semua catatan.",
             style = MaterialTheme.typography.bodySmall, color = if (isDark) Sky200 else Sky800)
     }
 }

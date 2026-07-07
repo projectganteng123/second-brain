@@ -82,9 +82,19 @@ class NoteRepository(
     }
 
     suspend fun update(note: NoteEntity) = noteDao.update(note)
-    suspend fun delete(note: NoteEntity) = noteDao.delete(note)
+
+    suspend fun delete(note: NoteEntity) {
+        reminderDao.deleteByNote(note.id)   // jangan tinggalkan pengingat yatim
+        noteDao.delete(note)
+    }
+
     suspend fun getById(id: Long): NoteEntity? = noteDao.getById(id)
-    suspend fun setArchived(id: Long, archived: Boolean) = noteDao.setArchived(id, archived)
+
+    suspend fun setArchived(id: Long, archived: Boolean) {
+        // Catatan diarsipkan tidak boleh berbunyi lagi (dibuat ulang saat catatan diedit/dipulihkan+diedit)
+        if (archived) reminderDao.deleteByNote(id)
+        noteDao.setArchived(id, archived)
+    }
     suspend fun setStatus(id: Long, status: NoteStatus?) = noteDao.setStatus(id, status?.name)
     suspend fun setPrioritas(id: Long, p: Priority?) = noteDao.setPrioritas(id, p?.name)
     suspend fun getPending(): List<NoteEntity> = noteDao.getPendingExtraction()

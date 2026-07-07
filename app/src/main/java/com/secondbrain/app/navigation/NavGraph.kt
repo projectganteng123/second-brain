@@ -8,14 +8,12 @@ import com.secondbrain.app.data.model.Metadata
 import com.secondbrain.app.data.repository.NoteRepository
 import com.secondbrain.app.ui.screens.*
 import com.secondbrain.app.util.PrefsManager
-import com.secondbrain.app.viewmodel.DashboardViewModel
 import com.secondbrain.app.viewmodel.InputViewModel
 import com.secondbrain.app.viewmodel.NoteDetailViewModel
 import com.secondbrain.app.viewmodel.QaViewModel
 
 sealed class Screen(val route: String) {
-    object Dashboard : Screen("dashboard")
-    object Input     : Screen("input")
+    object Home      : Screen("home")
     object Preview   : Screen("preview/{metadata}") {
         fun go(metadataJson: String) = "preview/${java.net.URLEncoder.encode(metadataJson, "UTF-8")}"
     }
@@ -42,29 +40,32 @@ fun NavGraph(
     openInput: Boolean = false
 ) {
     val gson = remember { GsonProvider.gson }
-    val dashboardVm = remember { DashboardViewModel(repo) }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
     val inputVm = remember { InputViewModel(repo, prefs) }
+    // Widget quick-capture tidak perlu navigasi khusus: halaman awal SUDAH layar Input.
 
-    // Buka layar Input langsung bila dipicu dari widget quick-capture
-    LaunchedEffect(openInput) {
-        if (openInput) navController.navigate(Screen.Input.route)
-    }
+    NavHost(navController, startDestination = Screen.Home.route) {
 
-    NavHost(navController, startDestination = Screen.Dashboard.route) {
-
-        composable(Screen.Dashboard.route) {
-            DashboardScreen(
-                vm = dashboardVm,
+        composable(Screen.Home.route) {
+            val uiState by inputVm.uiState.collectAsState()
+            LaunchedEffect(uiState) {
+                val state = uiState
+                if (state is com.secondbrain.app.viewmodel.InputUiState.Preview) {
+                    val json = java.net.URLEncoder.encode(gson.toJson(state.metadata), "UTF-8")
+                    navController.navigate("preview/$json")
+                    // Reset agar kembali ke Home tidak melempar lagi ke Preview
+                    inputVm.onPreviewNavigated()
+                }
+            }
+            HomePagerScreen(
                 repo = repo,
-                onAddNote = { navController.navigate(Screen.Input.route) },
+                inputVm = inputVm,
                 onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) },
-                onSearchClick = { navController.navigate(Screen.Search.route) },
-                onAskClick = { navController.navigate(Screen.Qa.route) },
-                onSettingsClick = { navController.navigate(Screen.Settings.route) },
-                onAllNotesClick = { navController.navigate(Screen.AllNotes.route) },
-                onEventsClick = { navController.navigate(Screen.Events.route) },
-                onFinanceClick = { navController.navigate(Screen.Finance.route) }
+                onOpenEvents = { navController.navigate(Screen.Events.route) },
+                onOpenFinance = { navController.navigate(Screen.Finance.route) },
+                onOpenQa = { navController.navigate(Screen.Qa.route) },
+                onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                onSaved = { }   // tetap di Home; VM sudah di-reset oleh InputScreen
             )
         }
 
@@ -100,26 +101,6 @@ fun NavGraph(
             )
         }
 
-        composable(Screen.Input.route) {
-            val uiState by inputVm.uiState.collectAsState()
-
-            LaunchedEffect(uiState) {
-                val state = uiState
-                if (state is com.secondbrain.app.viewmodel.InputUiState.Preview) {
-                    val json = java.net.URLEncoder.encode(gson.toJson(state.metadata), "UTF-8")
-                    navController.navigate("preview/$json")
-                    // Reset agar kembali ke Input tidak melempar lagi ke Preview
-                    inputVm.onPreviewNavigated()
-                }
-            }
-
-            InputScreen(
-                vm = inputVm,
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack(Screen.Dashboard.route, false) }
-            )
-        }
-
         composable(
             route = Screen.Preview.route,
             arguments = listOf(navArgument("metadata") { type = NavType.StringType })
@@ -133,7 +114,7 @@ fun NavGraph(
                 vm = inputVm,
                 metadata = metadata,
                 onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack(Screen.Dashboard.route, false) }
+                onSaved = { navController.popBackStack(Screen.Home.route, false) }
             )
         }
 
@@ -195,7 +176,7 @@ fun NavGraph(
                 vm = detailVm,
                 noteId = noteId,
                 onBack = { navController.popBackStack() },
-                onDeleted = { navController.popBackStack(Screen.Dashboard.route, false) }
+                onDeleted = { navController.popBackStack(Screen.Home.route, false) }
             )
         }
     }

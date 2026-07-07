@@ -1,27 +1,21 @@
 package com.secondbrain.app.capture
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 /**
- * Mode kata pemicu ("Jarvis") di layar Input.
+ * Mode kata pemicu ("Jarvis") di layar Input — TANPA loop.
  *
- * Pencocokan dilakukan pada TEKS hasil STT, bukan audio: [SttSession] di-loop selama
- * WAITING. Transkrip dibuang kecuali diawali kata pemicu; begitu terpicu, sisa kalimat
- * disisipkan (kata pemicu dibuang / diganti placeholder) lalu loop BERHENTI (Captured) —
- * menghindari bunyi "ding" beruntun dari restart sesi. Kalimat tambahan direkam lewat
- * tombol mic biasa; kata pemicu diaktifkan lagi via [startListening] ("Dengar lagi").
- *
- * Kasus "Jarvis" diucap sendirian (isi menyusul setelah jeda): satu sesi lanjutan
- * (Continuing) dijalankan untuk menangkap isinya — sekali saja, bukan loop.
+ * Satu kali diaktifkan = SATU sesi dengar (menghindari bunyi "bip" berulang dari
+ * restart sesi). Pencocokan pada TEKS hasil STT:
+ * - Diawali kata pemicu → sisa kalimat disisipkan (pemicu dibuang/diganti placeholder) → Captured.
+ * - Kata pemicu diucap sendirian → SATU sesi lanjutan (Continuing) menangkap isinya.
+ * - Tidak ada kata pemicu / hening → BERHENTI (Stopped) — aktifkan lagi via [startListening].
  *
  * Kontrak mic serial dipertahankan: pemanggil wajib [stopListening] sebelum memakai
- * SpeechRecognizer lain (mic manual/tombol template). Semua metode dari main thread.
+ * SpeechRecognizer lain. Semua metode dari main thread.
  */
 class VoiceTriggerController(
     context: Context,
@@ -37,37 +31,31 @@ class VoiceTriggerController(
         object Continuing : State
         /** Kalimat pemicu tertangkap; berhenti mendengarkan sampai diaktifkan lagi. */
         object Captured : State
-        /** Recognizer gagal beruntun — loop dihentikan agar tidak berputar panas. */
-        data class Unavailable(val message: String) : State
+        /** Sesi berakhir tanpa kata pemicu — tidak diulang (hindari bip beruntun). */
+        object Stopped : State
     }
 
     var state by mutableStateOf<State>(State.Off)
         private set
 
     private val session = SttSession(context)
-    private val handler = Handler(Looper.getMainLooper())
     private var running = false
-    private var fastFailStreak = 0  // sesi kosong yang berakhir <1,5 dtk = recognizer bermasalah
-    private var sessionStartedAt = 0L
 
     fun startListening() {
         if (running) return
         running = true
-        fastFailStreak = 0
         state = State.Waiting(triggerHeard = false)
         startSession()
     }
 
     fun stopListening() {
         running = false
-        handler.removeCallbacksAndMessages(null)
         session.destroy()
         if (state != State.Off) state = State.Off
     }
 
     private fun startSession() {
         if (!running) return
-        sessionStartedAt = SystemClock.elapsedRealtime()
         session.start(
             preferOffline = true,
             onPhase = { phase ->
@@ -85,66 +73,38 @@ class VoiceTriggerController(
     }
 
     private fun handleFinal(text: String) {
-        val elapsed = SystemClock.elapsedRealtime() - sessionStartedAt
         val trimmed = text.trim()
-
-        // Sesi kosong yang mati terlalu cepat bukan hening normal (timeout hening ±5 dtk),
-        // melainkan recognizer bermasalah (tidak tersedia/izin/busy) → backoff, jangan loop panas.
-        if (trimmed.isEmpty() && elapsed < 1500) {
-            fastFailStreak++
-            if (fastFailStreak >= 6) {
-                stopListening()
-                state = State.Unavailable("Pengenalan suara bermasalah — kata pemicu berhenti. Buka ulang layar ini untuk mencoba lagi.")
-                return
-            }
-            scheduleRestart(1000L * fastFailStreak)
-            return
-        }
-        fastFailStreak = 0
-
-        when (val s = state) {
+        when (state) {
             is State.Waiting -> {
                 val rest = if (trimmed.isEmpty()) null else matchTrigger(trimmed, triggerWord())
                 when {
-                    rest == null -> {
-                        if (s.triggerHeard) state = State.Waiting(triggerHeard = false)
-                        scheduleRestart(250)
-                    }
+                    rest == null -> finish(State.Stopped)      // tidak ada pemicu → berhenti, TANPA ulang
                     rest.isBlank() -> {
-                        state = State.Continuing
-                        scheduleRestart(250)
+                        state = State.Continuing               // "Jarvis" saja → satu sesi lanjutan
+                        startSession()
                     }
                     else -> {
                         val ph = placeholderWord().trim()
                         onInsert(if (ph.isEmpty()) rest else "$ph $rest")
-                        finishCaptured()
+                        finish(State.Captured)
                     }
                 }
             }
             State.Continuing -> {
                 if (trimmed.isNotEmpty()) {
                     onInsert(trimmed)
-                    finishCaptured()
-                } else {
-                    // Tidak ada isi setelah kata pemicu → kembali menunggu.
-                    state = State.Waiting(triggerHeard = false)
-                    scheduleRestart(250)
-                }
+                    finish(State.Captured)
+                } else finish(State.Stopped)
             }
             else -> {}
         }
     }
 
-    /** Kalimat tertangkap: hentikan loop dengar (tanpa ding lanjutan), tunggu "Dengar lagi". */
-    private fun finishCaptured() {
+    /** Hentikan mendengarkan dan tampilkan state akhir (Captured/Stopped). */
+    private fun finish(endState: State) {
         running = false
-        handler.removeCallbacksAndMessages(null)
         session.destroy()
-        state = State.Captured
-    }
-
-    private fun scheduleRestart(delayMs: Long) {
-        handler.postDelayed({ if (running) startSession() }, delayMs)
+        state = endState
     }
 
     companion object {

@@ -21,6 +21,9 @@ interface ReminderDao {
     """)
     suspend fun getUpcoming(from: Long, to: Long): List<ReminderEntity>
 
+    @Query("SELECT * FROM reminders WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): ReminderEntity?
+
     @Query("UPDATE reminders SET isSent = 1 WHERE id = :id")
     suspend fun markSent(id: Long)
 
