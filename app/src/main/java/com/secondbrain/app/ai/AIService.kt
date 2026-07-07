@@ -119,7 +119,8 @@ class AIService(
                 "Tambahkan di Pengaturan."
             )
         }
-        val raw = runFallback(onComboSuccess = { noteVisionKeyUsed(it.key) }) {
+        // Beberapa file dibaca bersamaan → tiap pembacaan mulai dari key berbeda (round-robin)
+        val raw = runFallback(rotatedCombos(READ_SLOT.getAndIncrement()), onComboSuccess = { noteVisionKeyUsed(it.key) }) {
             it.generateJsonWithMedia(PromptTemplates.MEDIA_READ, mimeType, dataBase64)
         }.getOrThrow()
         val (source, text) = ExtractionParser.parseMedia(raw)
@@ -133,7 +134,7 @@ class AIService(
         if (combos.isEmpty()) {
             throw RuntimeException("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
         }
-        val raw = runFallback(onComboSuccess = { noteVisionKeyUsed(it.key) }) {
+        val raw = runFallback(rotatedCombos(READ_SLOT.getAndIncrement()), onComboSuccess = { noteVisionKeyUsed(it.key) }) {
             it.generateJson(PromptTemplates.docReadPrompt(kind, content))
         }.getOrThrow()
         val (source, text) = ExtractionParser.parseMedia(raw, fallbackSource = kind)
@@ -200,6 +201,9 @@ class AIService(
         // ekstraksi berikutnya (kuota per-menitnya dianggap sudah terpakai).
         @Volatile private var lastVisionKey: String? = null
         @Volatile private var lastVisionAt: Long = 0L
+
+        /** Penghitung global agar pembacaan file paralel tersebar ke key berbeda. */
+        private val READ_SLOT = java.util.concurrent.atomic.AtomicInteger(0)
 
         private fun noteVisionKeyUsed(key: String) {
             lastVisionKey = key

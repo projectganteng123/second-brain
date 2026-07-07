@@ -276,8 +276,9 @@ fun InputScreen(
         }
     }
 
-    val readFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
+    // Boleh pilih BANYAK file sekaligus — tiap file dibaca paralel (key API berbeda, round-robin)
+    val readFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        uris.forEach { uri ->
             // Lampirkan file aslinya + baca isinya dengan AI
             AttachmentStore.copyIntoStore(context, uri)?.let(::addAttachment)
             startRead { MediaReader.prepareFromUri(context, uri) }
@@ -465,20 +466,6 @@ fun InputScreen(
                     linkText = ""; showLinkDialog = true
                 }
             }
-            if (readingCount > 0) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Lavender400)
-                    Text(
-                        "Membaca $readingCount file di latar — kamu bisa lanjut menulis atau langsung memproses.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isDark) Lavender200 else Lavender600
-                    )
-                }
-            }
             Spacer(Modifier.height(4.dp))
             OutlinedTextField(
                 value = controller.value,
@@ -603,8 +590,9 @@ fun InputScreen(
                     Text(
                         "Struk, catatan tulis tangan, screenshot chat, poster, PDF, Word (.docx), " +
                         "Excel (.xlsx), CSV, atau TXT — teksnya diekstrak ke catatan (bisa diedit dulu) " +
-                        "dan file aslinya ikut dilampirkan. Pembacaan berjalan di latar; kamu bisa " +
-                        "lanjut menulis. Maks 4 MB (gambar/PDF) / 10 MB (dokumen).",
+                        "dan file aslinya ikut dilampirkan. Boleh pilih BEBERAPA file sekaligus; " +
+                        "semuanya dibaca paralel dengan API berbeda. " +
+                        "Maks 4 MB (gambar/PDF) / 10 MB (dokumen).",
                         style = MaterialTheme.typography.bodySmall
                     )
                     GlassButton(
@@ -636,12 +624,17 @@ fun InputScreen(
         )
     }
 
-    // ----- Loading screen ekstraksi AI -----
-    if (uiState is InputUiState.Extracting) {
+    // ----- Loading screen terpadu: baca file & proses AI (bagi user sama saja) -----
+    val extracting = uiState is InputUiState.Extracting
+    var readOverlayHidden by remember { mutableStateOf(false) }
+    LaunchedEffect(readingCount) { if (readingCount == 0) readOverlayHidden = false }
+    if (extracting || (readingCount > 0 && !readOverlayHidden)) {
         ExtractionLoadingOverlay(
             isDark = isDark,
-            waitingReads = readingCount > 0,
-            onCancel = vm::cancelExtraction
+            extracting = extracting,
+            readingCount = readingCount,
+            onCancel = { if (extracting) vm.cancelExtraction() else vm.cancelReads() },
+            onHide = if (!extracting) ({ readOverlayHidden = true }) else null
         )
     }
 
@@ -690,10 +683,17 @@ private val APP_TIPS = listOf(
     "Punya ≥2 API key (boleh provider sama) membuat ekstraksi paralel bebas limit per menit."
 )
 
-/** Layar tunggu saat AI memproses: animasi, tips penggunaan bergantian, tombol batal.
- *  Tombol kembali tetap berfungsi (keluar; proses lanjut di latar). */
+/** Layar tunggu terpadu — dipakai saat MEMBACA file maupun MEMPROSES catatan (bagi user
+ *  keduanya sama: "AI sedang bekerja"). Animasi + tips bergantian + tombol batal;
+ *  saat membaca ada tombol sembunyikan (baca lanjut di latar); tombol kembali tetap keluar. */
 @Composable
-private fun ExtractionLoadingOverlay(isDark: Boolean, waitingReads: Boolean = false, onCancel: () -> Unit) {
+private fun ExtractionLoadingOverlay(
+    isDark: Boolean,
+    extracting: Boolean,
+    readingCount: Int,
+    onCancel: () -> Unit,
+    onHide: (() -> Unit)? = null
+) {
     var tipIndex by remember { mutableStateOf(APP_TIPS.indices.random()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -736,14 +736,18 @@ private fun ExtractionLoadingOverlay(isDark: Boolean, waitingReads: Boolean = fa
             }
             Spacer(Modifier.height(20.dp))
             Text(
-                "Memproses catatan…",
+                if (extracting) "Memproses catatan…"
+                else "Membaca ${if (readingCount > 1) "$readingCount file" else "file"}…",
                 style = MaterialTheme.typography.titleMedium,
                 color = if (isDark) Lavender50 else Lavender800
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                if (waitingReads) "Menunggu pembacaan gambar/file selesai dulu…"
-                else "AI membaca info umum, transaksi, dan jadwal secara paralel",
+                when {
+                    extracting && readingCount > 0 -> "Menunggu pembacaan gambar/file selesai dulu…"
+                    extracting -> "AI membaca info umum, transaksi, dan jadwal secara paralel"
+                    else -> "Teks hasil pembacaan akan masuk ke catatan dan tetap bisa diedit"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isDark) Lavender400 else Gray600,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -768,11 +772,21 @@ private fun ExtractionLoadingOverlay(isDark: Boolean, waitingReads: Boolean = fa
             }
             Spacer(Modifier.height(24.dp))
             GlassButton(
-                text = "Batalkan",
+                text = if (extracting) "Batalkan" else "Batalkan pembacaan",
                 icon = Icons.Outlined.Close,
                 onClick = onCancel,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (onHide != null) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onHide, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Sembunyikan — lanjut menulis, pembacaan jalan di latar",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) Lavender200 else Lavender600
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 "Tombol kembali = keluar; proses tetap lanjut di latar.",

@@ -155,6 +155,12 @@ class InputViewModel(
         }
     }
 
+    /** Batalkan semua pembacaan file yang masih berjalan (hasil yang sudah masuk dipertahankan). */
+    fun cancelReads() {
+        synchronized(readJobs) { readJobs.forEach { it.cancel() }; readJobs.clear() }
+        _readingCount.value = 0
+    }
+
     /** Batalkan ekstraksi yang sedang berjalan (dari tombol di loading screen). */
     fun cancelExtraction() {
         extractJob?.cancel()
