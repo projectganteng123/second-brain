@@ -6,7 +6,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -21,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -513,6 +521,11 @@ fun InputScreen(
         )
     }
 
+    // ----- Loading screen ekstraksi AI -----
+    if (uiState is InputUiState.Extracting) {
+        ExtractionLoadingOverlay(isDark = isDark, onCancel = vm::cancelExtraction)
+    }
+
     // ----- Dialog tambah link -----
     if (showLinkDialog) {
         AlertDialog(
@@ -542,6 +555,111 @@ fun InputScreen(
                 TextButton(onClick = { showLinkDialog = false }) { Text("Batal") }
             }
         )
+    }
+}
+
+private val APP_TIPS = listOf(
+    "Aktifkan kata pemicu di Pengaturan — ucapkan \"Jarvis, ingatkan saya…\" di layar ini tanpa menyentuh apa pun.",
+    "Sebut waktu spesifik — \"besok jam 9 pagi\" — agar jadwal & alarm akurat sampai menit.",
+    "Tulis harga sekalian (\"kopi 25rb\") — transaksi otomatis masuk halaman Keuangan.",
+    "Bilang \"pakai alarm\" atau \"bangunkan saya\" supaya toggle alarm menyala otomatis.",
+    "Minta persiapan: \"ingatkan sehari sebelumnya\" — jadi alarm persiapan tersendiri.",
+    "Beberapa kegiatan dalam satu catatan? Semuanya tetap dibuatkan pengingat.",
+    "Tombol pemandu di atas membantu menjawab per bagian supaya tidak ada yang terlewat.",
+    "Ketuk ikon ✨ di dashboard untuk bertanya ke catatanmu, mis. \"minggu ini ada apa?\".",
+    "Ekspor JSON rutin di Pengaturan — pilih Google Drive agar cadangan aman.",
+    "Punya ≥2 API key (boleh provider sama) membuat ekstraksi paralel bebas limit per menit."
+)
+
+/** Layar tunggu saat AI memproses: animasi, tips penggunaan bergantian, tombol batal.
+ *  Tombol kembali tetap berfungsi (keluar; proses lanjut di latar). */
+@Composable
+private fun ExtractionLoadingOverlay(isDark: Boolean, onCancel: () -> Unit) {
+    var tipIndex by remember { mutableStateOf(APP_TIPS.indices.random()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(4500)
+            tipIndex = (tipIndex + 1) % APP_TIPS.size
+        }
+    }
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        initialValue = 0.85f, targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label = "pulseScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background((if (isDark) Lavender900 else Gray50).copy(alpha = 0.97f))
+            // Blokir sentuhan ke layar di belakang
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) {},
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(84.dp),
+                    color = Lavender400,
+                    strokeWidth = 3.dp
+                )
+                Icon(
+                    Icons.Outlined.AutoAwesome, null,
+                    modifier = Modifier.size(34.dp).graphicsLayer { scaleX = pulse; scaleY = pulse },
+                    tint = if (isDark) Lavender200 else Lavender600
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            Text(
+                "Memproses catatan…",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (isDark) Lavender50 else Lavender800
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "AI membaca info umum, transaksi, dan jadwal secara paralel",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isDark) Lavender400 else Gray600,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(24.dp))
+            Crossfade(targetState = tipIndex, label = "tips") { i ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isDark) GlassDark else GlassLight)
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(Icons.Outlined.Lightbulb, null, modifier = Modifier.size(16.dp), tint = Sky600)
+                    Text(
+                        "Tips: ${APP_TIPS[i]}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDark) Sky200 else Sky800
+                    )
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            GlassButton(
+                text = "Batalkan",
+                icon = Icons.Outlined.Close,
+                onClick = onCancel,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Tombol kembali = keluar; proses tetap lanjut di latar.",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isDark) Lavender400 else Gray400
+            )
+        }
     }
 }
 

@@ -45,33 +45,63 @@ class AIService(
 
     suspend fun extractMetadata(rawText: String, now: String): Result<Metadata> = runCatching {
         val p = prompts ?: throw IllegalStateException("AIService ini dibuat untuk tanya-jawab, bukan ekstraksi")
+
+        // Hemat kuota: prompt Keuangan/Acara hanya jalan bila teksnya mengindikasikan
+        // transaksi/jadwal (Universal selalu jalan).
+        val needFinance = ExtractionHeuristics.mightContainFinance(rawText)
+        val needSchedule = ExtractionHeuristics.mightContainSchedule(rawText)
+        if (!needFinance || !needSchedule) {
+            DebugLog.log(
+                "AI ⏭ hemat",
+                "prompt dilewati: " + listOfNotNull(
+                    if (!needFinance) "Keuangan" else null,
+                    if (!needSchedule) "Acara" else null
+                ).joinToString(", ")
+            )
+        }
+
         coroutineScope {
-            // Tiap prompt MULAI dari provider berbeda (round-robin) supaya tiga permintaan
-            // paralel tidak menghantam jatah token-per-menit satu provider sekaligus;
-            // fallback tetap mencoba semua kombinasi lain bila gagal.
-            val tasks = listOf(p.universal, p.finance, p.schedule).mapIndexed { i, template ->
+            // Tiap prompt MULAI dari API key berbeda (round-robin per key) supaya panggilan
+            // paralel tidak menghantam limit per-menit key yang sama.
+            var slot = 0
+            fun launchPrompt(template: String) = slot++.let { offset ->
                 async {
-                    runFallback(rotatedCombos(i)) {
+                    runFallback(rotatedCombos(offset)) {
                         it.generateJson(PromptTemplates.fill(template, now, rawText))
                     }
                 }
             }
-            val results = tasks.map { it.await() }
-            results.firstOrNull { it.isFailure }?.let { throw it.exceptionOrNull()!! }
+            val uTask = launchPrompt(p.universal)
+            val fTask = if (needFinance) launchPrompt(p.finance) else null
+            val sTask = if (needSchedule) launchPrompt(p.schedule) else null
+
+            val uRes = uTask.await()
+            val fRes = fTask?.await()
+            val sRes = sTask?.await()
+            listOfNotNull(uRes, fRes, sRes).firstOrNull { it.isFailure }
+                ?.let { throw it.exceptionOrNull()!! }
+
             ExtractionParser.merge(
-                universalRaw = results[0].getOrThrow(),
-                financeRaw = results[1].getOrThrow(),
-                scheduleRaw = results[2].getOrThrow()
+                universalRaw = uRes.getOrThrow(),
+                financeRaw = fRes?.getOrThrow() ?: EMPTY_FINANCE,
+                scheduleRaw = sRes?.getOrThrow() ?: EMPTY_SCHEDULE
             )
         }
+    }.onFailure {
+        // Pembatalan user bukan kegagalan — teruskan agar coroutine benar-benar berhenti.
+        if (it is kotlinx.coroutines.CancellationException) throw it
     }
 
-    /** Putar urutan grup provider: prompt ke-0 mulai dari provider #1, ke-1 dari #2, dst. */
+    /**
+     * Putar urutan per API KEY (bukan sekadar provider): key = satuan limit per-menit.
+     * Prompt ke-0 mulai dari key #1, ke-1 dari key #2, dst. — mis. Groq-1, Groq-2,
+     * Cerebras-1. Fallback tetap menjalar ke seluruh kombinasi key×model lain.
+     */
     private fun rotatedCombos(offset: Int): List<AICombo> {
-        val groups = combos.groupBy { it.provider }.values.toList()
-        if (groups.size <= 1) return combos
-        val k = offset % groups.size
-        return (groups.drop(k) + groups.take(k)).flatten()
+        val units = combos.groupBy { it.provider to it.key }.values.toList()
+        if (units.size <= 1) return combos
+        val k = offset % units.size
+        return (units.drop(k) + units.take(k)).flatten()
     }
 
     suspend fun answerQuestion(question: String, context: List<String>): Result<String> =
@@ -127,6 +157,9 @@ class AIService(
     }
 
     companion object {
+        private const val EMPTY_FINANCE = """{"transactions":[]}"""
+        private const val EMPTY_SCHEDULE = """{"schedules":[]}"""
+
         /** Service untuk ekstraksi metadata (model ringan dulu; 3 prompt paralel). */
         fun forExtraction(prefs: PrefsManager): AIService =
             AIService(buildCombos(prefs, forAnswer = false), ExtractionPrompts.from(prefs))

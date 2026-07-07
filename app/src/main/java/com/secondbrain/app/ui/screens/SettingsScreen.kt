@@ -178,6 +178,33 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = if (isDark) Lavender400 else Gray600
                 )
+                // Ekstraksi menjalankan sampai 3 prompt PARALEL — 1 key mudah kena limit/menit
+                val totalKeys = listOf(
+                    groqEnabled to groqKeys,
+                    cerebrasEnabled to cerebrasKeys,
+                    geminiEnabled to geminiKeys
+                ).filter { it.first }.sumOf { (_, txt) ->
+                    txt.split(Regex("\\s+")).count { k -> k.isNotBlank() }
+                }
+                if (totalKeys in 0..1) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(if (isDark) Lemon600.copy(0.12f) else Lemon50, RoundedCornerShape(10.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Outlined.Warning, null, modifier = Modifier.size(16.dp), tint = Lemon600)
+                        Text(
+                            "Baru $totalKeys API key aktif. Ekstraksi menjalankan hingga 3 prompt " +
+                            "PARALEL, jadi 1 key mudah kena limit per menit. Disarankan minimal 2 key — " +
+                            "boleh 2 key dari provider yang sama, atau dari provider berbeda.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDark) Lemon200 else Lemon800
+                        )
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
                 ProviderKeySection(
                     name = "Groq",

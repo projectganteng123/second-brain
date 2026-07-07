@@ -61,6 +61,8 @@ class InputViewModel(
         _rawText.value = if (cur.isBlank()) extra else "$cur $extra"
     }
 
+    private var extractJob: kotlinx.coroutines.Job? = null
+
     fun processWithAI() {
         val text = _rawText.value.trim()
         if (text.isBlank()) return
@@ -68,7 +70,7 @@ class InputViewModel(
             _uiState.value = InputUiState.Error("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
             return
         }
-        viewModelScope.launch {
+        extractJob = viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
             val now = com.secondbrain.app.ai.PromptTemplates.nowString()
             val service = AIService.forExtraction(prefs)
@@ -86,8 +88,19 @@ class InputViewModel(
                     _useAlarm.value = prefs.isEventAlarmDefaultOn() || meta.suggestAlarm
                     _uiState.value = InputUiState.Preview(meta)
                 }
-                .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses") }
+                .onFailure {
+                    if (it !is kotlinx.coroutines.CancellationException) {
+                        _uiState.value = InputUiState.Error(it.message ?: "Gagal memproses")
+                    }
+                }
         }
+    }
+
+    /** Batalkan ekstraksi yang sedang berjalan (dari tombol di loading screen). */
+    fun cancelExtraction() {
+        extractJob?.cancel()
+        extractJob = null
+        if (_uiState.value is InputUiState.Extracting) _uiState.value = InputUiState.Idle
     }
 
     fun saveNote(metadata: Metadata) {
