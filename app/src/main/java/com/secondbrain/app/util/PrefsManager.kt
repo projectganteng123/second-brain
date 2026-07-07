@@ -125,6 +125,10 @@ class PrefsManager(context: Context) {
             "gemini-flash-latest"
         )
 
+        /** Model bervision (baca gambar). PDF hanya didukung Gemini. */
+        val GROQ_VISION_MODELS = listOf("meta-llama/llama-4-scout-17b-16e-instruct")
+        val GEMINI_VISION_MODELS = listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")
+
         fun modelLadder(provider: AIProviderType): List<String> = when (provider) {
             AIProviderType.GROQ -> GROQ_MODEL_LADDER
             AIProviderType.CEREBRAS -> CEREBRAS_MODEL_LADDER

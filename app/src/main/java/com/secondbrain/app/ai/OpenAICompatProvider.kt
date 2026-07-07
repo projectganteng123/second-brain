@@ -40,6 +40,23 @@ class OpenAICompatProvider(
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
+    override suspend fun generateJsonWithMedia(prompt: String, mimeType: String, dataBase64: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                // Hanya Groq (Llama-4 Scout) yang punya vision; itu pun hanya gambar, bukan PDF.
+                if (type != AIProviderType.GROQ || !mimeType.startsWith("image/")) {
+                    throw UnsupportedOperationException("$name tidak mendukung membaca ${if (mimeType.startsWith("image/")) "gambar" else "file $mimeType"}")
+                }
+                DebugLog.log("AI → baca media", "provider=$name model=$model mime=$mimeType (${dataBase64.length / 1024} KB base64)")
+                val responseText = call(
+                    prompt, jsonOutput = true, maxTokens = 2048,
+                    imageDataUrl = "data:$mimeType;base64,$dataBase64"
+                )
+                DebugLog.log("AI ← media", responseText)
+                responseText
+            }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
+        }
+
     override suspend fun answerQuestion(question: String, contextNotes: List<String>): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -51,11 +68,14 @@ class OpenAICompatProvider(
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    private fun call(prompt: String, jsonOutput: Boolean, maxTokens: Int): String {
+    private fun call(prompt: String, jsonOutput: Boolean, maxTokens: Int, imageDataUrl: String? = null): String {
+        val content = if (imageDataUrl == null) gson.toJson(prompt)
+            else "[{\"type\": \"text\", \"text\": ${gson.toJson(prompt)}}, " +
+                 "{\"type\": \"image_url\", \"image_url\": {\"url\": \"$imageDataUrl\"}}]"
         val body = buildString {
             append("{")
             append("\"model\": ${gson.toJson(model)}, ")
-            append("\"messages\": [{\"role\": \"user\", \"content\": ${gson.toJson(prompt)}}], ")
+            append("\"messages\": [{\"role\": \"user\", \"content\": $content}], ")
             append("\"temperature\": 0.1, ")
             append("\"max_completion_tokens\": $maxTokens")
             // JSON mode hanya untuk Groq; dukungan json_object di Cerebras belum merata

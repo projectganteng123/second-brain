@@ -107,6 +107,26 @@ class AIService(
     suspend fun answerQuestion(question: String, context: List<String>): Result<String> =
         runFallback { it.answerQuestion(question, context) }
 
+    /** Hasil pembacaan gambar/dokumen: jenis sumber + teks isi. */
+    data class MediaText(val source: String, val text: String)
+
+    /** Baca gambar/PDF jadi teks catatan (dipakai fitur "Baca dengan AI" di layar Input).
+     *  Key yang berhasil dicatat agar TIDAK diprioritaskan pada ekstraksi berikutnya. */
+    suspend fun readMedia(mimeType: String, dataBase64: String): Result<MediaText> = runCatching {
+        if (combos.isEmpty()) {
+            throw RuntimeException(
+                "Membaca gambar/PDF butuh API key Gemini (gambar & PDF) atau Groq (gambar saja). " +
+                "Tambahkan di Pengaturan."
+            )
+        }
+        val raw = runFallback(onComboSuccess = { noteVisionKeyUsed(it.key) }) {
+            it.generateJsonWithMedia(PromptTemplates.MEDIA_READ, mimeType, dataBase64)
+        }.getOrThrow()
+        val (source, text) = ExtractionParser.parseMedia(raw)
+        if (text.isBlank()) throw RuntimeException("AI tidak menemukan teks yang bisa dibaca pada file ini.")
+        MediaText(source, text)
+    }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+
     private fun mask(key: String): String =
         if (key.length <= 8) "($key)" else "${key.take(6)}…${key.takeLast(2)} (${key.length} char)"
 
@@ -117,6 +137,7 @@ class AIService(
 
     private suspend fun <T> runFallback(
         comboList: List<AICombo> = combos,
+        onComboSuccess: ((AICombo) -> Unit)? = null,
         block: suspend (AIProvider) -> Result<T>
     ): Result<T> {
         if (comboList.isEmpty()) {
@@ -131,6 +152,7 @@ class AIService(
             DebugLog.log("AI →", "pakai ${combo.provider.displayName} key=${mask(combo.key)} model=${combo.model}")
             val res = block(providerFor(combo))
             if (res.isSuccess) {
+                onComboSuccess?.invoke(combo)
                 if (index > 0) DebugLog.log(
                     "AI ↩ fallback",
                     "berhasil dengan ${combo.provider.displayName}/${combo.model} (kombinasi ke-${index + 1})"
@@ -160,17 +182,49 @@ class AIService(
         private const val EMPTY_FINANCE = """{"transactions":[]}"""
         private const val EMPTY_SCHEDULE = """{"schedules":[]}"""
 
+        // Key yang barusan dipakai membaca gambar — jangan diprioritaskan untuk
+        // ekstraksi berikutnya (kuota per-menitnya dianggap sudah terpakai).
+        @Volatile private var lastVisionKey: String? = null
+        @Volatile private var lastVisionAt: Long = 0L
+
+        private fun noteVisionKeyUsed(key: String) {
+            lastVisionKey = key
+            lastVisionAt = System.currentTimeMillis()
+        }
+
+        /** Pindahkan key bekas baca-gambar ke urutan TERAKHIR (jendela 90 detik ≈ 1 menit TPM). */
+        private fun deprioritizeVisionKey(combos: List<AICombo>): List<AICombo> {
+            val k = lastVisionKey ?: return combos
+            if (System.currentTimeMillis() - lastVisionAt > 90_000L) return combos
+            val (used, rest) = combos.partition { it.key == k }
+            return rest + used
+        }
+
         /** Service untuk ekstraksi metadata (model ringan dulu; 3 prompt paralel). */
         fun forExtraction(prefs: PrefsManager): AIService =
-            AIService(buildCombos(prefs, forAnswer = false), ExtractionPrompts.from(prefs))
+            AIService(deprioritizeVisionKey(buildCombos(prefs, forAnswer = false)), ExtractionPrompts.from(prefs))
 
         /** Service untuk tanya-jawab (model kuat dulu). */
         fun forAnswer(prefs: PrefsManager): AIService =
             AIService(buildCombos(prefs, forAnswer = true), null)
 
+        /** Service untuk membaca gambar/PDF. PDF: Gemini saja; gambar: Groq (Scout) + Gemini. */
+        fun forVision(prefs: PrefsManager, forPdf: Boolean): AIService =
+            AIService(buildVisionCombos(prefs, forPdf), null)
+
         private fun buildCombos(prefs: PrefsManager, forAnswer: Boolean): List<AICombo> =
             prefs.activeProviders().flatMap { p ->
                 val models = if (forAnswer) PrefsManager.answerModels(p) else PrefsManager.extractionModels(p)
+                prefs.getApiKeys(p).flatMap { k -> models.map { m -> AICombo(p, k, m) } }
+            }
+
+        private fun buildVisionCombos(prefs: PrefsManager, forPdf: Boolean): List<AICombo> =
+            prefs.activeProviders().flatMap { p ->
+                val models = when {
+                    p == AIProviderType.GEMINI -> PrefsManager.GEMINI_VISION_MODELS
+                    p == AIProviderType.GROQ && !forPdf -> PrefsManager.GROQ_VISION_MODELS
+                    else -> emptyList()
+                }
                 prefs.getApiKeys(p).flatMap { k -> models.map { m -> AICombo(p, k, m) } }
             }
     }

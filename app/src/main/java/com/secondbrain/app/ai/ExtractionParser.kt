@@ -144,4 +144,14 @@ object ExtractionParser {
 
     private fun noteType(s: String?): NoteType? =
         s?.trim()?.let { v -> NoteType.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
+
+    // ---- Hasil pembacaan gambar/dokumen ----
+
+    private data class MediaDto(val source: String? = null, val text: String? = null)
+
+    /** Parse output prompt MEDIA_READ → (jenis sumber, teks isi). */
+    fun parseMedia(raw: String): Pair<String, String> {
+        val dto = parseAs(raw, MediaDto::class.java, "Gambar")
+        return (dto.source.orEmpty().ifBlank { "gambar" }) to dto.text.orEmpty().trim()
+    }
 }

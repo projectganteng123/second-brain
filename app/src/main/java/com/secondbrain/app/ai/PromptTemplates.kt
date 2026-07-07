@@ -153,6 +153,21 @@ Aturan:
 - Tidak ada kegiatan terjadwal maupun pengingat -> {"schedules": []}.
 """.trimIndent()
 
+    /** Prompt membaca gambar/dokumen (struk, tulisan tangan, screenshot, PDF) jadi teks catatan. */
+    val MEDIA_READ = """
+Baca isi gambar/dokumen terlampir (konteks Indonesia). Kembalikan HANYA JSON, tanpa teks lain:
+{"source": "jenis sumber", "text": "isi penting"}
+
+Aturan:
+- source: sebut jenisnya singkat, mis. "struk belanja", "catatan tulis tangan", "screenshot chat", "poster acara", "dokumen".
+- text: Bahasa Indonesia, padat, siap diproses sebagai catatan:
+  - Struk/nota: tulis tiap item beserta harganya (angka murni, mis. "Roti 18000"), jumlah bila ada, total, nama toko, dan tanggal struk.
+  - Catatan tulis tangan: salin isi teksnya (rapikan seperlunya, jangan ubah makna).
+  - Screenshot chat/pesan: rangkum percakapan + informasi penting (janji, waktu, tempat, nominal uang).
+  - Poster/undangan: nama acara, tanggal, jam, tempat.
+- Jangan mengarang; lewati bagian yang tidak terbaca.
+""".trimIndent()
+
     fun defaultFor(kind: ExtractionKind): String = when (kind) {
         ExtractionKind.UNIVERSAL -> DEFAULT_UNIVERSAL
         ExtractionKind.FINANCE -> DEFAULT_FINANCE

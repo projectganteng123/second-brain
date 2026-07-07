@@ -2,6 +2,7 @@ package com.secondbrain.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,15 +44,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.capture.*
 import com.secondbrain.app.data.model.Attachment
 import com.secondbrain.app.ui.components.*
 import com.secondbrain.app.ui.theme.*
 import com.secondbrain.app.util.AttachmentStore
+import com.secondbrain.app.util.MediaReader
 import com.secondbrain.app.util.PrefsManager
 import com.secondbrain.app.viewmodel.InputUiState
 import com.secondbrain.app.viewmodel.InputViewModel
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -237,6 +243,49 @@ fun InputScreen(
         uri?.let { AttachmentStore.copyIntoStore(context, it)?.let(::addAttachment) }
     }
 
+    // ----- Baca gambar/file dengan AI (struk, tulisan tangan, screenshot, PDF) -----
+    val readScope = rememberCoroutineScope()
+    var readingMedia by remember { mutableStateOf(false) }
+    var showReadChooser by remember { mutableStateOf(false) }
+    var pendingReadCameraFile by remember { mutableStateOf<File?>(null) }
+
+    fun startRead(prepare: () -> Result<MediaReader.Prepared>) {
+        readingMedia = true
+        readScope.launch {
+            val prepared = withContext(Dispatchers.IO) { prepare() }.getOrElse {
+                readingMedia = false
+                Toast.makeText(context, it.message ?: "File tidak bisa dibaca", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val result = AIService
+                .forVision(prefs, forPdf = prepared.mimeType == "application/pdf")
+                .readMedia(prepared.mimeType, prepared.base64)
+            readingMedia = false
+            result.onSuccess { m ->
+                controller.appendPlain("Dari ${m.source}: ${m.text}")
+                vm.updateText(controller.value.text)
+            }.onFailure {
+                Toast.makeText(context, it.message ?: "Gagal membaca file", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val readFileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            // Lampirkan file aslinya + baca isinya dengan AI
+            AttachmentStore.copyIntoStore(context, uri)?.let(::addAttachment)
+            startRead { MediaReader.prepareFromUri(context, uri) }
+        }
+    }
+    val readCameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingReadCameraFile
+        pendingReadCameraFile = null
+        if (ok && f != null && f.exists()) {
+            addAttachment(AttachmentStore.imageAttachment(f))
+            startRead { MediaReader.prepareImageFile(f) }
+        } else f?.delete()
+    }
+
     val labelColor = if (isDark) Lavender200 else Lavender600
     val hlBg = if (isDark) Peach600.copy(0.30f) else Peach200
     val transform = VisualTransformation { annotated ->
@@ -390,6 +439,10 @@ fun InputScreen(
                     showClearDialog = true
                 }
                 Spacer(Modifier.weight(1f))
+                ToolIcon(Icons.Outlined.DocumentScanner, "Baca gambar/file dengan AI", isDark,
+                    enabled = !readingMedia) {
+                    showReadChooser = true
+                }
                 ToolIcon(Icons.Outlined.PhotoCamera, "Lampirkan dari kamera", isDark) {
                     val f = AttachmentStore.newImageFile(context)
                     pendingCameraFile = f
@@ -405,6 +458,20 @@ fun InputScreen(
                 }
                 ToolIcon(Icons.Outlined.Link, "Lampirkan link", isDark) {
                     linkText = ""; showLinkDialog = true
+                }
+            }
+            if (readingMedia) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Lavender400)
+                    Text(
+                        "Membaca gambar/file dengan AI… hasilnya masuk ke teks catatan.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) Lavender200 else Lavender600
+                    )
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -486,7 +553,7 @@ fun InputScreen(
                     icon = Icons.Outlined.AutoAwesome,
                     onClick = vm::processWithAI,
                     accent = true,
-                    enabled = !isLoading && !recording,
+                    enabled = !isLoading && !recording && !readingMedia,
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (uiState is InputUiState.Error) {
@@ -517,6 +584,48 @@ fun InputScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) { Text("Batal") }
+            }
+        )
+    }
+
+    // ----- Dialog pilih sumber "Baca dengan AI" -----
+    if (showReadChooser) {
+        AlertDialog(
+            onDismissRequest = { showReadChooser = false },
+            title = { Text("Baca dengan AI") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Struk, catatan tulis tangan, screenshot chat, poster, atau PDF — " +
+                        "teksnya diekstrak ke catatan (bisa diedit dulu) dan file aslinya ikut " +
+                        "dilampirkan. Maksimal 4 MB.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    GlassButton(
+                        text = "Kamera (foto struk/catatan)",
+                        icon = Icons.Outlined.PhotoCamera,
+                        onClick = {
+                            showReadChooser = false
+                            val f = AttachmentStore.newImageFile(context)
+                            pendingReadCameraFile = f
+                            readCameraLauncher.launch(AttachmentStore.contentUri(context, f))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    GlassButton(
+                        text = "Galeri / File (gambar & PDF)",
+                        icon = Icons.Outlined.Image,
+                        onClick = {
+                            showReadChooser = false
+                            readFileLauncher.launch(arrayOf("image/*", "application/pdf"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showReadChooser = false }) { Text("Batal") }
             }
         )
     }

@@ -25,6 +25,17 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
+    override suspend fun generateJsonWithMedia(prompt: String, mimeType: String, dataBase64: String): Result<String> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                DebugLog.log("AI → baca media", "model=${config.model} mime=$mimeType (${dataBase64.length / 1024} KB base64)")
+                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = 2048,
+                    mediaMime = mimeType, mediaData = dataBase64)
+                DebugLog.log("AI ← media", responseText)
+                responseText
+            }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
+        }
+
     override suspend fun answerQuestion(question: String, contextNotes: List<String>): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
@@ -36,7 +47,13 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    private fun callGemini(prompt: String, jsonOutput: Boolean, maxTokens: Int): String {
+    private fun callGemini(
+        prompt: String,
+        jsonOutput: Boolean,
+        maxTokens: Int,
+        mediaMime: String? = null,
+        mediaData: String? = null
+    ): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}"
         )
@@ -47,9 +64,15 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             append(", \"thinkingConfig\": {\"thinkingBudget\": 0}")
             if (jsonOutput) append(", \"responseMimeType\": \"application/json\"")
         }
+        val parts = buildString {
+            append("{\"text\": ${gson.toJson(prompt)}}")
+            if (mediaMime != null && mediaData != null) {
+                append(", {\"inline_data\": {\"mime_type\": \"$mediaMime\", \"data\": \"$mediaData\"}}")
+            }
+        }
         val body = """
             {
-              "contents": [{"parts": [{"text": ${gson.toJson(prompt)}}]}],
+              "contents": [{"parts": [$parts]}],
               "generationConfig": {$genConfig}
             }
         """.trimIndent()
