@@ -29,37 +29,74 @@ object PromptTemplates {
     }
 
     val DEFAULT_UNIVERSAL = """
-Ekstrak metadata UMUM dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON, tanpa teks lain.
+Ekstrak metadata UMUM dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON tanpa teks lain.
 
 WAKTU SEKARANG: {now}
-(dipakai hanya untuk mengubah deadline relatif pada action item menjadi tanggal absolut)
+(digunakan hanya untuk mengubah deadline relatif pada action menjadi tanggal & jam absolut)
 
 Catatan:
 "{note}"
 
-Tujuan: informasi umum. JANGAN ekstrak waktu kegiatan, jadwal, maupun transaksi keuangan
-(itu ditangani proses lain). Pengecualian: deadline pada action item boleh diisi.
+Tujuan: ekstrak informasi umum. JANGAN ekstrak jadwal kegiatan, waktu acara, maupun transaksi keuangan (ditangani proses lain). Pengecualian: deadline pada action boleh diisi.
 
-Struktur JSON (kosongkan array / null bila tidak ada):
+Struktur JSON:
 {
   "title": "judul singkat",
   "type": "meeting|task|reminder|event|note|idea|personal",
   "summary": "1-3 kalimat",
   "keywords": ["kata penting"],
-  "locations": [{"type": "location|platform", "value": "tempat/aplikasi"}],
-  "entities": {"people": ["nama"], "organizations": ["organisasi"]},
-  "actions": [{"action": "aksi", "owner": "nama|null", "deadline": "YYYY-MM-DD|null"}],
+  "locations": [
+    {
+      "type": "location|platform",
+      "value": "tempat/aplikasi"
+    }
+  ],
+  "entities": {
+    "people": ["nama"],
+    "organizations": ["organisasi"]
+  },
+  "actions": [
+    {
+      "action": "aksi",
+      "owner": "nama",
+      "deadline": "YYYY-MM-DDTHH:mm|null"
+    }
+  ],
   "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
   "status": "belum_mulai|berjalan|selesai"
 }
 
 Aturan:
 - title maksimal 8 kata.
-- keywords berisi kata penting, termasuk nama produk/proyek bila ada.
+- summary 1-3 kalimat singkat.
+- keywords berisi kata penting, termasuk nama produk, proyek, atau topik bila ada.
+- locations hanya berisi tempat atau platform yang benar-benar disebut.
 - entities hanya berisi entitas yang benar-benar muncul di catatan.
-- type: pilih yang paling sesuai isi catatan.
-- priority: tebak kuadran Eisenhower (penting & mendesak).
-- status: "belum_mulai" bila belum dikerjakan; "berjalan"/"selesai" hanya bila teks jelas.
+- Jika people tidak disebut atau tidak jelas, isi dengan ["saya"].
+- type pilih yang paling sesuai isi catatan.
+- actions berisi semua tindakan yang harus dilakukan.
+- owner diisi nama yang bertanggung jawab; jika tidak disebut, isi "saya".
+- deadline diisi hingga menit (YYYY-MM-DDTHH:mm).
+- Ubah deadline relatif menjadi waktu absolut berdasarkan WAKTU SEKARANG.
+- Jika hanya disebut tanggal tanpa jam, gunakan:
+  - tugas biasa → 08:00
+  - deadline → 23:59
+- Konversi waktu:
+  - subuh=05:00
+  - pagi=08:00
+  - siang=12:00
+  - sore=15:00
+  - malam=19:00
+  - jam 1 siang = 13:00
+  - jam 7 malam / 07.00 malam = 19:00
+- Jika deadline tidak ada, isi null.
+- priority diperkirakan menggunakan matriks Eisenhower.
+- status:
+  - belum_mulai jika belum dikerjakan atau hanya berupa rencana.
+  - berjalan jika sedang dikerjakan.
+  - selesai hanya jika teks secara jelas menyatakan sudah selesai.
+- Jika tidak ada action, gunakan [].
+- Jika tidak ada organizations, locations, atau keywords, gunakan array kosong.
 """.trimIndent()
 
     val DEFAULT_FINANCE = """
@@ -104,17 +141,29 @@ Aturan:
 """.trimIndent()
 
     val DEFAULT_SCHEDULE = """
-Ekstrak SEMUA kegiatan terjadwal & pengingat dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON, tanpa teks lain.
+Ekstrak SEMUA kegiatan terjadwal dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON tanpa teks lain.
 
 WAKTU SEKARANG: {now}
 (format: nama hari, tanggal, jam)
-Gunakan sebagai acuan untuk MENGUBAH semua waktu relatif menjadi tanggal & jam absolut
-yang PRESISI sampai menit: "besok" -> +1 hari; "lusa" -> +2 hari; "10 menit lagi" -> sekarang
-+ 10 menit; "setengah jam lagi" -> +30 menit; "2 jam lagi" -> +2 jam. Gunakan NAMA HARI di atas
-untuk menghitung sebutan hari: mis. sekarang Senin, "Jumat ini" -> +4 hari, "Senin depan" -> +7 hari.
-Pastikan pergeseran hari & tanggal benar.
-Waktu samar: subuh=05:00, pagi=08:00, siang=12:00, sore=15:00, malam=19:00.
-Jika ada jam pasti, pakai jam itu. Jam wajib format HH:mm 24 jam.
+
+Gunakan waktu sekarang untuk mengubah SEMUA waktu relatif menjadi tanggal & jam absolut yang presisi sampai menit.
+Contoh:
+- besok = +1 hari
+- lusa = +2 hari
+- 10 menit lagi = +10 menit
+- setengah jam lagi = +30 menit
+- 2 jam lagi = +2 jam
+- "Jumat ini", "Senin depan", dll dihitung berdasarkan nama hari saat ini.
+
+Konversi waktu:
+- subuh = 05:00
+- pagi = 08:00
+- siang = 12:00
+- sore = 15:00
+- malam = 19:00
+- jam 1 siang = 13:00
+- jam 7 malam / 07.00 malam = 19:00
+Gunakan format 24 jam (HH:mm).
 
 Catatan:
 "{note}"
@@ -133,24 +182,35 @@ Struktur JSON:
       "participants": ["nama"],
       "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
       "status": "belum_mulai|berjalan|selesai",
-      "preparationTimes": ["YYYY-MM-DDTHH:mm"],
+      "alarmTimes": ["YYYY-MM-DDTHH:mm"],
       "useAlarm": false
     }
   ]
 }
 
 Aturan:
-- Harus bisa mengekstrak BANYAK kegiatan sekaligus; satu kegiatan = satu object.
-- dates WAJIB minimal 1 tanggal per kegiatan (tidak disebut -> tanggal hari ini).
-- Kegiatan BERULANG ("setiap Senin", "tiap bulan tanggal 10"): JANGAN pakai RRULE —
-  daftarkan tanggal konkretnya satu per satu di dates, maksimal 90 hari ke depan.
-- Tanggal tanpa jam -> startTime "08:00". Deadline tanpa jam -> "23:59".
-- preparationTimes: isi HANYA bila user minta diingatkan persiapan (mis. "ingatkan sehari
-  sebelumnya"); hitung tanggal+jam absolut. Boleh LEBIH DARI SATU waktu bila user minta
-  beberapa pengingat; array kosong bila tidak diminta. Tiap waktu akan menjadi alarm.
-- useAlarm: true HANYA bila user minta alarm keras / dibangunkan / jangan sampai terlewat
-  (mis. "pakai alarm", "bangunkan saya").
-- Tidak ada kegiatan terjadwal maupun pengingat -> {"schedules": []}.
+- Ekstrak hanya kegiatan bertipe meeting, task, event, atau reminder. Jika catatan bukan kegiatan tersebut, abaikan.
+- Satu kegiatan = satu object.
+- Jika hari/tanggal tidak disebut, gunakan hari ini.
+- dates wajib berisi minimal satu tanggal.
+- Jika hanya ada tanggal tanpa jam:
+  - meeting/task/event/reminder → startTime = "08:00"
+  - jika merupakan deadline → startTime = "23:59"
+- endTime diisi hanya jika disebut.
+- Untuk kegiatan berulang (mis. setiap Senin, tiap tanggal 10), jangan gunakan RRULE. Isi dates dengan tanggal konkret maksimal 90 hari ke depan.
+- participants: jika tidak disebut, isi ["saya"].
+- alarmTimes berisi semua waktu alarm atau pengingat dalam bentuk waktu absolut.
+  - Jika pengguna meminta diingatkan sebelum kegiatan, isi dengan waktu pengingat.
+    Contoh:
+    - Meeting 12:00, "ingatkan 10 menit sebelumnya" → ["YYYY-MM-DDT11:50"]
+    - "ingatkan malam sebelumnya" → ["YYYY-MM-DDT19:00"] pada hari sebelumnya.
+  - Jika catatan hanya berupa permintaan mengingatkan (bukan alarm sebelum acara), isi alarmTimes dengan waktu pengingat tersebut.
+    Contoh:
+    - "Ingatkan saya minum obat jam 20.00" → alarmTimes = ["YYYY-MM-DDT20:00"]
+    - "Besok jam 09.00 ingatkan saya menghubungi Budi" → alarmTimes = ["YYYY-MM-DDT09:00"]
+  - Jika tidak ada permintaan alarm atau pengingat, gunakan [].
+- useAlarm = true hanya jika pengguna secara eksplisit meminta alarm keras, dibangunkan, jangan sampai terlewat, atau ungkapan serupa. Permintaan "ingatkan saya" saja tetap bernilai false.
+- Jika tidak ditemukan kegiatan → {"schedules":[]}.
 """.trimIndent()
 
     /** Prompt membaca gambar/dokumen (struk, tulisan tangan, screenshot, PDF) jadi teks catatan. */

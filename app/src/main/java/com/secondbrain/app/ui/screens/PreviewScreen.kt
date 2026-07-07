@@ -39,21 +39,16 @@ fun PreviewScreen(
 
     var editedMetadata by remember {
         mutableStateOf(metadata.copy(
-            preparationTimes = metadata.preparationTimesEffective(),
-            preparationTime = null
+            alarmTimes = metadata.alarmTimesEffective(),
+            preparationTime = null,
+            preparationTimes = null
         ))
     }
     var editing by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val prefs = remember { PrefsManager(context) }
-    // Toggle alarm persiapan: menyala bila AI/user mengisi waktunya, bisa dimatikan.
-    var prepEnabled by remember { mutableStateOf(metadata.preparationTimesEffective().isNotEmpty()) }
-    val canExactAlarm = remember {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            (context.getSystemService(android.content.Context.ALARM_SERVICE) as android.app.AlarmManager)
-                .canScheduleExactAlarms()
-        } else true
-    }
+    // Toggle waktu alarm: menyala bila AI/user mengisi waktunya, bisa dimatikan.
+    var alarmTimesEnabled by remember { mutableStateOf(metadata.alarmTimesEffective().isNotEmpty()) }
 
     LaunchedEffect(uiState) {
         if (uiState is InputUiState.Saved) {
@@ -156,7 +151,7 @@ fun PreviewScreen(
                             buildString {
                                 append("• ${it.action}")
                                 it.owner?.let { o -> append(" ($o)") }
-                                it.deadline?.let { d -> append(" → $d") }
+                                it.deadline?.let { d -> append(" → ${TimeFormat.dateTime(d)}") }
                             }
                         }
                     )
@@ -267,7 +262,7 @@ fun PreviewScreen(
                     Switch(checked = useAlarm, onCheckedChange = vm::setUseAlarm)
                 }
 
-                // ----- Alarm persiapan (boleh lebih dari satu waktu) -----
+                // ----- Waktu alarm (boleh lebih dari satu) -----
                 Spacer(Modifier.height(12.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -275,46 +270,46 @@ fun PreviewScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Alarm persiapan", style = MaterialTheme.typography.bodyMedium,
+                        Text("Waktu alarm", style = MaterialTheme.typography.bodyMedium,
                             color = if (isDark) Lavender50 else Lavender800)
-                        Text("Tiap waktu persiapan menjadi alarm keras",
+                        Text("Tiap waktu menjadi alarm keras (mis. pengingat persiapan)",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isDark) Lavender400 else Gray600)
                     }
                     Switch(
-                        checked = prepEnabled,
+                        checked = alarmTimesEnabled,
                         onCheckedChange = {
-                            prepEnabled = it
-                            if (it && editedMetadata.preparationTimes.orEmpty().isEmpty()) {
+                            alarmTimesEnabled = it
+                            if (it && editedMetadata.alarmTimes.orEmpty().isEmpty()) {
                                 editedMetadata = editedMetadata.copy(
-                                    preparationTimes = listOf(defaultPrepTime())
+                                    alarmTimes = listOf(defaultAlarmTime())
                                 )
                             }
                         }
                     )
                 }
-                if (prepEnabled) {
-                    val prepList = editedMetadata.preparationTimes.orEmpty()
-                    prepList.forEachIndexed { i, t ->
+                if (alarmTimesEnabled) {
+                    val alarmList = editedMetadata.alarmTimes.orEmpty()
+                    alarmList.forEachIndexed { i, t ->
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             DateTimeField(
-                                label = "Persiapan ${i + 1}",
+                                label = "Alarm ${i + 1}",
                                 value = t,
                                 onChange = { new ->
-                                    val list = prepList.toMutableList()
+                                    val list = alarmList.toMutableList()
                                     if (new == null) list.removeAt(i) else list[i] = new
-                                    editedMetadata = editedMetadata.copy(preparationTimes = list)
+                                    editedMetadata = editedMetadata.copy(alarmTimes = list)
                                 },
                                 isDark = isDark,
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(onClick = {
                                 editedMetadata = editedMetadata.copy(
-                                    preparationTimes = prepList.toMutableList().also { it.removeAt(i) }
+                                    alarmTimes = alarmList.toMutableList().also { it.removeAt(i) }
                                 )
                             }) {
-                                Icon(Icons.Outlined.DeleteOutline, "Hapus waktu persiapan",
+                                Icon(Icons.Outlined.DeleteOutline, "Hapus waktu alarm",
                                     tint = Rose600, modifier = Modifier.size(18.dp))
                             }
                         }
@@ -327,46 +322,15 @@ fun PreviewScreen(
                     }
                     Spacer(Modifier.height(6.dp))
                     GlassButton(
-                        text = "Tambah waktu persiapan",
+                        text = "Tambah waktu alarm",
                         icon = Icons.Outlined.Add,
                         onClick = {
                             editedMetadata = editedMetadata.copy(
-                                preparationTimes = prepList + defaultPrepTime()
+                                alarmTimes = alarmList + defaultAlarmTime()
                             )
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-
-                // ----- Izin exact alarm (Android 12+) -----
-                if (!canExactAlarm && editedMetadata.recurrenceDates.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth()
-                            .background(if (isDark) Lemon600.copy(0.12f) else Lemon50, RoundedCornerShape(10.dp))
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Outlined.Warning, null, modifier = Modifier.size(16.dp), tint = Lemon600)
-                        Column {
-                            Text(
-                                "Notifikasi acara butuh izin \"Alarm & pengingat\" agar tampil tepat waktu. " +
-                                "Tanpa izin, notifikasi acara TIDAK dijadwalkan (alarm keras tetap jalan).",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (isDark) Lemon200 else Lemon800
-                            )
-                            TextButton(onClick = {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                                    context.startActivity(
-                                        android.content.Intent(
-                                            android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                                            android.net.Uri.parse("package:${context.packageName}")
-                                        )
-                                    )
-                                }
-                            }) { Text("Beri izin", color = Lemon600) }
-                        }
-                    }
                 }
             }
 
@@ -379,8 +343,8 @@ fun PreviewScreen(
                 icon = Icons.Outlined.Save,
                 onClick = {
                     vm.saveNote(editedMetadata.copy(
-                        preparationTimes = if (prepEnabled)
-                            editedMetadata.preparationTimes.orEmpty().filter { it.isNotBlank() }
+                        alarmTimes = if (alarmTimesEnabled)
+                            editedMetadata.alarmTimes.orEmpty().filter { it.isNotBlank() }
                         else emptyList()
                     ))
                 },
@@ -394,8 +358,8 @@ fun PreviewScreen(
     }
 }
 
-/** Waktu persiapan default saat user menambah manual: 1 jam dari sekarang. */
-private fun defaultPrepTime(): String =
+/** Waktu alarm default saat user menambah manual: 1 jam dari sekarang. */
+private fun defaultAlarmTime(): String =
     java.time.LocalDateTime.now().plusHours(1)
         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"))
 
@@ -665,7 +629,7 @@ private fun MetadataEditor(
                         shape = fieldShape,
                         colors = fieldColors
                     )
-                    DateField(
+                    DateTimeField(
                         label = "Deadline",
                         value = act.deadline,
                         onChange = { v ->

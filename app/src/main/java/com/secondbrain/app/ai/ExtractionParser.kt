@@ -51,8 +51,9 @@ object ExtractionParser {
         val participants: List<String>? = null,
         val priority: String? = null,
         val status: String? = null,
-        val preparationTime: String? = null,          // legacy / model lama
-        val preparationTimes: List<String>? = null,
+        val preparationTime: String? = null,          // legacy / output model lama
+        val preparationTimes: List<String>? = null,   // legacy / output model lama
+        val alarmTimes: List<String>? = null,
         val useAlarm: Boolean = false
     )
 
@@ -133,7 +134,8 @@ object ExtractionParser {
             summary = u.summary.orEmpty(),
             priority = main?.priority ?: u.priority,
             status = main?.status ?: u.status,
-            preparationTimes = (main?.preparationTimes
+            alarmTimes = (main?.alarmTimes
+                ?: main?.preparationTimes
                 ?: main?.preparationTime?.let { listOf(it) }).orEmpty()
                 .filter { it.isNotBlank() },
             transactions = transactions.takeIf { it.isNotEmpty() },

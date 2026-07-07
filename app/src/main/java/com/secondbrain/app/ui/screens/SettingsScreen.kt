@@ -334,6 +334,56 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // ----- Keandalan alarm (pembunuh baterai OEM) -----
+            GlassCard {
+                SectionLabel("keandalan alarm", modifier = Modifier.padding(bottom = 8.dp))
+                var batteryExempt by remember {
+                    mutableStateOf(
+                        (context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager)
+                            .isIgnoringBatteryOptimizations(context.packageName)
+                    )
+                }
+                Text(
+                    if (batteryExempt)
+                        "✓ App sudah dikecualikan dari optimasi baterai — alarm & notifikasi bisa " +
+                        "berbunyi walau app lama tidak dibuka."
+                    else
+                        "Sebagian HP (Xiaomi/Oppo/Vivo dll.) mematikan app di latar sehingga alarm " +
+                        "hanya berbunyi saat app dibuka. Kecualikan app ini dari optimasi baterai " +
+                        "agar alarm selalu berbunyi.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isDark) Lavender400 else Gray600
+                )
+                if (!batteryExempt) {
+                    Spacer(Modifier.height(8.dp))
+                    GlassButton(
+                        text = "Kecualikan dari optimasi baterai",
+                        icon = Icons.Outlined.BatteryAlert,
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                        android.net.Uri.parse("package:${context.packageName}")
+                                    )
+                                )
+                            }
+                        },
+                        accent = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Di HP Xiaomi/Oppo/Vivo, aktifkan juga \"Autostart / Mulai otomatis\" untuk " +
+                        "app ini di pengaturan sistem bila alarm masih tidak berbunyi.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) Lavender400 else Gray400
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             // ----- Kata pemicu suara -----
             GlassCard {
                 SectionLabel("kata pemicu suara", modifier = Modifier.padding(bottom = 8.dp))

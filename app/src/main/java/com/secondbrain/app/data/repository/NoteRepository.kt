@@ -143,7 +143,7 @@ class NoteRepository(
         val notes = noteDao.getAllOnce()
         val sb = StringBuilder()
         fun esc(s: String?): String = "\"" + (s ?: "").replace("\"", "\"\"").replace("\n", " ") + "\""
-        sb.append("id,createdAt,updatedAt,title,type,startTime,endTime,recurrenceDates,locations,people,organizations,keywords,actions,preparationTime,priorityAI,statusAI,priorityManual,statusManual,useAlarm,archived,summary,rawText\n")
+        sb.append("id,createdAt,updatedAt,title,type,startTime,endTime,recurrenceDates,locations,people,organizations,keywords,actions,alarmTimes,priorityAI,statusAI,priorityManual,statusManual,useAlarm,archived,summary,rawText\n")
         for (n in notes) {
             val m = metadataFrom(n)
             val actionsStr = m?.actions?.joinToString("; ") { a ->
@@ -166,7 +166,7 @@ class NoteRepository(
                 .append(esc(m?.entities?.organizations?.joinToString("; "))).append(',')
                 .append(esc(m?.keywords?.joinToString("; "))).append(',')
                 .append(esc(actionsStr)).append(',')
-                .append(esc(m?.preparationTimesEffective()?.joinToString("; "))).append(',')
+                .append(esc(m?.alarmTimesEffective()?.joinToString("; "))).append(',')
                 .append(esc(m?.priority)).append(',')
                 .append(esc(m?.status)).append(',')
                 .append(esc(n.prioritas)).append(',')
@@ -372,25 +372,49 @@ class NoteRepository(
             )
         }
 
-        // Waktu persiapan (boleh lebih dari satu) — SELALU alarm
-        for (prep in metadata.preparationTimesEffective()) {
-            val prepMillis = runCatching {
-                LocalDateTime.parse(prep, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")).toEpochMilli()
+        // Waktu alarm/pengingat eksplisit (boleh lebih dari satu) — SELALU alarm
+        for (alarmAt in metadata.alarmTimesEffective()) {
+            val millis = runCatching {
+                LocalDateTime.parse(alarmAt, DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm")).toEpochMilli()
             }.getOrNull()
-            if (prepMillis != null && prepMillis > nowMillis) {
+            if (millis != null && millis > nowMillis) {
                 reminders.add(ReminderEntity(
                     noteId = noteId,
-                    remindAt = prepMillis,
-                    message = "Persiapan: ${metadata.title}",
+                    remindAt = millis,
+                    message = metadata.title,
                     isAlarm = true
                 ))
             }
         }
 
-        if (reminders.isNotEmpty()) {
-            reminderDao.insertAll(reminders)
-            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${reminders.size} pengingat (alarm offset=$alarmOffsetMinutes mnt, alarm=$useAlarm)")
+        val deduped = dedupReminders(reminders)
+        if (deduped.isNotEmpty()) {
+            reminderDao.insertAll(deduped)
+            DebugLog.log("DB ✓ reminder", "id catatan=$noteId → ${deduped.size} pengingat (alarm offset=$alarmOffsetMinutes mnt, alarm=$useAlarm, dedup=${reminders.size - deduped.size})")
         }
+    }
+
+    /**
+     * Aturan dedup dalam SATU catatan:
+     * - Dua alarm berjarak < 5 menit → alarm yang lebih AWAL tetap alarm, yang belakangan
+     *   otomatis diturunkan menjadi notifikasi biasa.
+     * - Waktu persis sama & jenis sama → cukup satu (satu alarm + satu notifikasi boleh
+     *   berbagi waktu yang sama).
+     */
+    private fun dedupReminders(reminders: List<ReminderEntity>): List<ReminderEntity> {
+        val out = mutableListOf<ReminderEntity>()
+        for (r in reminders.sortedBy { it.remindAt }) {
+            var cur = r
+            if (cur.isAlarm) {
+                val nearbyAlarm = out.lastOrNull {
+                    it.isAlarm && (cur.remindAt - it.remindAt) < 5 * 60_000L
+                }
+                if (nearbyAlarm != null) cur = cur.copy(isAlarm = false)   // turunkan jadi notifikasi
+            }
+            val duplicate = out.any { it.remindAt == cur.remindAt && it.isAlarm == cur.isAlarm }
+            if (!duplicate) out.add(cur)
+        }
+        return out
     }
 
     private fun LocalDateTime.toEpochMilli(): Long =

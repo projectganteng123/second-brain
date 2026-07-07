@@ -14,10 +14,12 @@ data class Metadata(
     /** Rekomendasi AI (string mentah, dipetakan ke enum dengan fallback). */
     val priority: String? = null,
     val status: String? = null,
-    /** LEGACY: waktu persiapan tunggal. Dipertahankan agar catatan lama terbaca; yang baru pakai [preparationTimes]. */
+    /** LEGACY: waktu persiapan tunggal — hanya untuk membaca catatan lama. */
     val preparationTime: String? = null,
-    /** Waktu persiapan absolut "yyyy-MM-ddTHH:mm" (boleh lebih dari satu) — tiap waktu = 1 alarm. */
+    /** LEGACY: daftar waktu persiapan — hanya untuk membaca catatan lama. */
     val preparationTimes: List<String>? = null,
+    /** Waktu alarm/pengingat absolut "yyyy-MM-ddTHH:mm" (boleh lebih dari satu) — tiap waktu = 1 alarm. */
+    val alarmTimes: List<String>? = null,
     // Field di bawah nullable (bukan emptyList) karena metadataJson catatan LAMA tidak
     // memuatnya dan Gson mengabaikan default Kotlin — baca selalu lewat .orEmpty().
     /** Transaksi keuangan hasil prompt Keuangan. */
@@ -27,9 +29,9 @@ data class Metadata(
     /** Rekomendasi AI: pengingat catatan ini sebaiknya alarm keras (pra-centang di Preview). */
     val suggestAlarm: Boolean = false
 ) {
-    /** Daftar waktu persiapan efektif — menggabungkan field baru & legacy. */
-    fun preparationTimesEffective(): List<String> =
-        preparationTimes ?: preparationTime?.let { listOf(it) } ?: emptyList()
+    /** Daftar waktu alarm efektif — field baru, fallback ke field legacy catatan lama. */
+    fun alarmTimesEffective(): List<String> =
+        alarmTimes ?: preparationTimes ?: preparationTime?.let { listOf(it) } ?: emptyList()
 }
 
 /** Satu transaksi keuangan. Field string nullable karena diisi Gson dari output AI. */

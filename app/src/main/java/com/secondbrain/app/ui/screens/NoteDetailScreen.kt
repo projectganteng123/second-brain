@@ -202,7 +202,7 @@ fun NoteDetailScreen(
                             buildString {
                                 append("• ${it.action}")
                                 it.owner?.let { o -> append(" ($o)") }
-                                it.deadline?.let { d -> append(" → $d") }
+                                it.deadline?.let { d -> append(" → ${com.secondbrain.app.util.TimeFormat.dateTime(d)}") }
                             }
                         })
                     }
