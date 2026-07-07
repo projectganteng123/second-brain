@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.data.model.*
 import com.secondbrain.app.data.repository.NoteRepository
+import com.secondbrain.app.util.MediaReader
 import com.secondbrain.app.util.PrefsManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 
 sealed class InputUiState {
@@ -63,15 +66,71 @@ class InputViewModel(
 
     private var extractJob: kotlinx.coroutines.Job? = null
 
+    // ---- Baca gambar/file dengan AI (berjalan di latar; hasilnya menyusul ke teks) ----
+    private val readJobs = java.util.Collections.synchronizedList(mutableListOf<kotlinx.coroutines.Job>())
+    private val _readingCount = MutableStateFlow(0)
+    val readingCount: StateFlow<Int> = _readingCount.asStateFlow()
+    /** Hasil baca yang menunggu dimasukkan layar ke teks catatan. */
+    private val _pendingInserts = MutableStateFlow<List<String>>(emptyList())
+    val pendingInserts: StateFlow<List<String>> = _pendingInserts.asStateFlow()
+    private val _readMessage = MutableStateFlow<String?>(null)
+    val readMessage: StateFlow<String?> = _readMessage.asStateFlow()
+
+    fun consumeReadMessage() { _readMessage.value = null }
+    fun consumeInsert(text: String) {
+        _pendingInserts.update { it - text }   // hapus kemunculan pertama
+    }
+
+    /** Mulai membaca gambar/PDF/dokumen di latar. User boleh lanjut menulis atau
+     *  langsung memproses — processWithAI menunggu pembacaan selesai dulu. */
+    fun readMedia(prepared: MediaReader.Prepared) {
+        _readingCount.update { it + 1 }
+        lateinit var job: kotlinx.coroutines.Job
+        job = viewModelScope.launch {
+            try {
+                val result = when (prepared) {
+                    is MediaReader.Prepared.Media ->
+                        AIService.forVision(prefs, forPdf = prepared.mimeType == "application/pdf")
+                            .readMedia(prepared.mimeType, prepared.base64)
+                    is MediaReader.Prepared.Text ->
+                        AIService.forReading(prefs).readDocument(prepared.kind, prepared.text)
+                }
+                result.onSuccess { m ->
+                    _pendingInserts.update { it + "Dari ${m.source}: ${m.text}" }
+                }.onFailure {
+                    if (it !is kotlinx.coroutines.CancellationException) {
+                        _readMessage.value = it.message ?: "Gagal membaca file"
+                    }
+                }
+            } finally {
+                _readingCount.update { c -> (c - 1).coerceAtLeast(0) }
+                readJobs.remove(job)
+            }
+        }
+        readJobs += job
+    }
+
     fun processWithAI() {
-        val text = _rawText.value.trim()
-        if (text.isBlank()) return
         if (!prefs.hasAnyActiveApiKey()) {
             _uiState.value = InputUiState.Error("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
             return
         }
+        if (_rawText.value.isBlank() && readJobs.isEmpty() && _pendingInserts.value.isEmpty()) return
         extractJob = viewModelScope.launch {
             _uiState.value = InputUiState.Extracting
+            // Tunggu pembacaan gambar/file yang masih berjalan — hasilnya bagian dari catatan
+            readJobs.toList().let { jobs -> if (jobs.isNotEmpty()) jobs.joinAll() }
+            // Hasil baca yang belum sempat dimasukkan layar → gabungkan langsung ke teks
+            val extra = _pendingInserts.value.filter { !_rawText.value.contains(it) }
+            _pendingInserts.value = emptyList()
+            if (extra.isNotEmpty()) {
+                _rawText.value = (_rawText.value.trim() + " " + extra.joinToString(" ")).trim()
+            }
+            val text = _rawText.value.trim()
+            if (text.isBlank()) {
+                _uiState.value = InputUiState.Error("Tidak ada teks yang bisa diproses (pembacaan file gagal?).")
+                return@launch
+            }
             val now = com.secondbrain.app.ai.PromptTemplates.nowString()
             val service = AIService.forExtraction(prefs)
             service.extractMetadata(text, now)
@@ -138,6 +197,10 @@ class InputViewModel(
     }
 
     fun reset() {
+        synchronized(readJobs) { readJobs.forEach { it.cancel() }; readJobs.clear() }
+        _readingCount.value = 0
+        _pendingInserts.value = emptyList()
+        _readMessage.value = null
         _rawText.value = ""
         _selectedPrioritas.value = null
         _selectedStatus.value = NoteStatus.BELUM_MULAI

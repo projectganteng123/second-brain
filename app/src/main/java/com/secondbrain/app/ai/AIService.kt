@@ -127,6 +127,20 @@ class AIService(
         MediaText(source, text)
     }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
 
+    /** Baca isi dokumen (Word/Excel/CSV/TXT — teks sudah diekstrak lokal) jadi teks catatan.
+     *  Tidak butuh vision, jadi semua provider bisa. Key yang dipakai ikut dicatat. */
+    suspend fun readDocument(kind: String, content: String): Result<MediaText> = runCatching {
+        if (combos.isEmpty()) {
+            throw RuntimeException("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
+        }
+        val raw = runFallback(onComboSuccess = { noteVisionKeyUsed(it.key) }) {
+            it.generateJson(PromptTemplates.docReadPrompt(kind, content))
+        }.getOrThrow()
+        val (source, text) = ExtractionParser.parseMedia(raw, fallbackSource = kind)
+        if (text.isBlank()) throw RuntimeException("AI tidak menemukan isi yang bisa dibaca pada file ini.")
+        MediaText(source, text)
+    }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+
     private fun mask(key: String): String =
         if (key.length <= 8) "($key)" else "${key.take(6)}…${key.takeLast(2)} (${key.length} char)"
 
@@ -211,6 +225,10 @@ class AIService(
         /** Service untuk membaca gambar/PDF. PDF: Gemini saja; gambar: Groq (Scout) + Gemini. */
         fun forVision(prefs: PrefsManager, forPdf: Boolean): AIService =
             AIService(buildVisionCombos(prefs, forPdf), null)
+
+        /** Service untuk membaca dokumen teks (semua provider, model ringan dulu). */
+        fun forReading(prefs: PrefsManager): AIService =
+            AIService(buildCombos(prefs, forAnswer = false), null)
 
         private fun buildCombos(prefs: PrefsManager, forAnswer: Boolean): List<AICombo> =
             prefs.activeProviders().flatMap { p ->

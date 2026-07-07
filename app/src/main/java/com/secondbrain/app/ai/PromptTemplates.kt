@@ -168,6 +168,24 @@ Aturan:
 - Jangan mengarang; lewati bagian yang tidak terbaca.
 """.trimIndent()
 
+    /** Prompt merangkum isi dokumen (Word/Excel/CSV/TXT) yang teksnya sudah diekstrak lokal. */
+    fun docReadPrompt(kind: String, content: String): String = """
+Berikut isi file $kind. Kembalikan HANYA JSON, tanpa teks lain:
+{"source": "jenis dokumen singkat", "text": "isi penting"}
+
+Aturan:
+- source: mis. "dokumen Word", "tabel Excel", "data CSV".
+- text: Bahasa Indonesia, padat, siap diproses sebagai catatan.
+- Pertahankan angka, nominal uang, tanggal, jam, dan nama persis seperti sumber.
+- Tabel: sebutkan tiap baris penting (mis. "Roti 18000"), plus total bila ada.
+- Jangan mengarang isi yang tidak ada.
+
+Isi file:
+<<<
+$content
+>>>
+""".trimIndent()
+
     fun defaultFor(kind: ExtractionKind): String = when (kind) {
         ExtractionKind.UNIVERSAL -> DEFAULT_UNIVERSAL
         ExtractionKind.FINANCE -> DEFAULT_FINANCE

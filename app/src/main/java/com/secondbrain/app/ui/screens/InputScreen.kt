@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.secondbrain.app.ai.AIService
 import com.secondbrain.app.capture.*
 import com.secondbrain.app.data.model.Attachment
 import com.secondbrain.app.ui.components.*
@@ -243,30 +242,37 @@ fun InputScreen(
         uri?.let { AttachmentStore.copyIntoStore(context, it)?.let(::addAttachment) }
     }
 
-    // ----- Baca gambar/file dengan AI (struk, tulisan tangan, screenshot, PDF) -----
+    // ----- Baca gambar/file dengan AI (struk, tulisan tangan, screenshot, PDF, Word/Excel/CSV) -----
+    // Pembacaan berjalan DI LATAR (di ViewModel): user bisa lanjut menulis / langsung memproses.
     val readScope = rememberCoroutineScope()
-    var readingMedia by remember { mutableStateOf(false) }
+    val readingCount by vm.readingCount.collectAsState()
+    val readMessage by vm.readMessage.collectAsState()
+    val pendingInserts by vm.pendingInserts.collectAsState()
     var showReadChooser by remember { mutableStateOf(false) }
     var pendingReadCameraFile by remember { mutableStateOf<File?>(null) }
 
+    LaunchedEffect(readMessage) {
+        readMessage?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            vm.consumeReadMessage()
+        }
+    }
+    // Hasil baca yang datang saat layar terbuka → sisipkan ke teks catatan
+    LaunchedEffect(pendingInserts) {
+        pendingInserts.firstOrNull()?.let { text ->
+            controller.appendPlain(text)
+            vm.updateText(controller.value.text)
+            vm.consumeInsert(text)
+        }
+    }
+
     fun startRead(prepare: () -> Result<MediaReader.Prepared>) {
-        readingMedia = true
         readScope.launch {
-            val prepared = withContext(Dispatchers.IO) { prepare() }.getOrElse {
-                readingMedia = false
-                Toast.makeText(context, it.message ?: "File tidak bisa dibaca", Toast.LENGTH_LONG).show()
-                return@launch
-            }
-            val result = AIService
-                .forVision(prefs, forPdf = prepared.mimeType == "application/pdf")
-                .readMedia(prepared.mimeType, prepared.base64)
-            readingMedia = false
-            result.onSuccess { m ->
-                controller.appendPlain("Dari ${m.source}: ${m.text}")
-                vm.updateText(controller.value.text)
-            }.onFailure {
-                Toast.makeText(context, it.message ?: "Gagal membaca file", Toast.LENGTH_LONG).show()
-            }
+            withContext(Dispatchers.IO) { prepare() }
+                .onSuccess { vm.readMedia(it) }
+                .onFailure {
+                    Toast.makeText(context, it.message ?: "File tidak bisa dibaca", Toast.LENGTH_LONG).show()
+                }
         }
     }
 
@@ -439,8 +445,7 @@ fun InputScreen(
                     showClearDialog = true
                 }
                 Spacer(Modifier.weight(1f))
-                ToolIcon(Icons.Outlined.DocumentScanner, "Baca gambar/file dengan AI", isDark,
-                    enabled = !readingMedia) {
+                ToolIcon(Icons.Outlined.DocumentScanner, "Baca gambar/file dengan AI", isDark) {
                     showReadChooser = true
                 }
                 ToolIcon(Icons.Outlined.PhotoCamera, "Lampirkan dari kamera", isDark) {
@@ -460,7 +465,7 @@ fun InputScreen(
                     linkText = ""; showLinkDialog = true
                 }
             }
-            if (readingMedia) {
+            if (readingCount > 0) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -468,7 +473,7 @@ fun InputScreen(
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Lavender400)
                     Text(
-                        "Membaca gambar/file dengan AI… hasilnya masuk ke teks catatan.",
+                        "Membaca $readingCount file di latar — kamu bisa lanjut menulis atau langsung memproses.",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isDark) Lavender200 else Lavender600
                     )
@@ -553,7 +558,7 @@ fun InputScreen(
                     icon = Icons.Outlined.AutoAwesome,
                     onClick = vm::processWithAI,
                     accent = true,
-                    enabled = !isLoading && !recording && !readingMedia,
+                    enabled = !isLoading && !recording,
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (uiState is InputUiState.Error) {
@@ -596,9 +601,10 @@ fun InputScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Struk, catatan tulis tangan, screenshot chat, poster, atau PDF — " +
-                        "teksnya diekstrak ke catatan (bisa diedit dulu) dan file aslinya ikut " +
-                        "dilampirkan. Maksimal 4 MB.",
+                        "Struk, catatan tulis tangan, screenshot chat, poster, PDF, Word (.docx), " +
+                        "Excel (.xlsx), CSV, atau TXT — teksnya diekstrak ke catatan (bisa diedit dulu) " +
+                        "dan file aslinya ikut dilampirkan. Pembacaan berjalan di latar; kamu bisa " +
+                        "lanjut menulis. Maks 4 MB (gambar/PDF) / 10 MB (dokumen).",
                         style = MaterialTheme.typography.bodySmall
                     )
                     GlassButton(
@@ -613,11 +619,11 @@ fun InputScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     GlassButton(
-                        text = "Galeri / File (gambar & PDF)",
+                        text = "Galeri / File (gambar, PDF, Word, Excel, CSV)",
                         icon = Icons.Outlined.Image,
                         onClick = {
                             showReadChooser = false
-                            readFileLauncher.launch(arrayOf("image/*", "application/pdf"))
+                            readFileLauncher.launch(arrayOf("image/*", "application/pdf", "text/*", "application/*"))
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -632,7 +638,11 @@ fun InputScreen(
 
     // ----- Loading screen ekstraksi AI -----
     if (uiState is InputUiState.Extracting) {
-        ExtractionLoadingOverlay(isDark = isDark, onCancel = vm::cancelExtraction)
+        ExtractionLoadingOverlay(
+            isDark = isDark,
+            waitingReads = readingCount > 0,
+            onCancel = vm::cancelExtraction
+        )
     }
 
     // ----- Dialog tambah link -----
@@ -683,7 +693,7 @@ private val APP_TIPS = listOf(
 /** Layar tunggu saat AI memproses: animasi, tips penggunaan bergantian, tombol batal.
  *  Tombol kembali tetap berfungsi (keluar; proses lanjut di latar). */
 @Composable
-private fun ExtractionLoadingOverlay(isDark: Boolean, onCancel: () -> Unit) {
+private fun ExtractionLoadingOverlay(isDark: Boolean, waitingReads: Boolean = false, onCancel: () -> Unit) {
     var tipIndex by remember { mutableStateOf(APP_TIPS.indices.random()) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -732,7 +742,8 @@ private fun ExtractionLoadingOverlay(isDark: Boolean, onCancel: () -> Unit) {
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "AI membaca info umum, transaksi, dan jadwal secara paralel",
+                if (waitingReads) "Menunggu pembacaan gambar/file selesai dulu…"
+                else "AI membaca info umum, transaksi, dan jadwal secara paralel",
                 style = MaterialTheme.typography.bodySmall,
                 color = if (isDark) Lavender400 else Gray600,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
