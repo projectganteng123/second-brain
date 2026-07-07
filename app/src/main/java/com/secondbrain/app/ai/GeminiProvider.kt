@@ -64,7 +64,7 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             append(", \"thinkingConfig\": {\"thinkingBudget\": 0}")
             if (jsonOutput) append(", \"responseMimeType\": \"application/json\"")
         }
-        val parts = buildString {
+        val requestParts = buildString {
             append("{\"text\": ${gson.toJson(prompt)}}")
             if (mediaMime != null && mediaData != null) {
                 append(", {\"inline_data\": {\"mime_type\": \"$mediaMime\", \"data\": \"$mediaData\"}}")
@@ -72,7 +72,7 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         }
         val body = """
             {
-              "contents": [{"parts": [$parts]}],
+              "contents": [{"parts": [$requestParts]}],
               "generationConfig": {$genConfig}
             }
         """.trimIndent()

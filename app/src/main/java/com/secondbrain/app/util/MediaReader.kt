@@ -108,6 +108,12 @@ object MediaReader {
 
     // ---------- Dokumen ----------
 
+    /** Nama tampilan file (untuk fallback deteksi ekstensi bila MIME generik). */
+    private fun displayName(context: Context, uri: Uri): String = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else null }
+    }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+
     private fun sizeChecked(context: Context, uri: Uri, open: () -> InputStream?): () -> InputStream? {
         val size = runCatching {
             context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
