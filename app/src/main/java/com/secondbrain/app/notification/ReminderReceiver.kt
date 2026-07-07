@@ -22,22 +22,12 @@ class ReminderReceiver : BroadcastReceiver() {
         val message = intent.getStringExtra(EXTRA_MESSAGE) ?: "Pengingat"
         val isAlarm = intent.getBooleanExtra(EXTRA_IS_ALARM, false)
 
-        // VALIDASI dulu ke database sebelum bunyi: alarm yang sudah terdaftar di AlarmManager
-        // tetap meledak walau catatannya dihapus/di-reextract/diarsipkan — di sinilah disaring.
-        val pending = goAsync()
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabase.get(context)
-                val reminder = if (reminderId >= 0) db.reminderDao().getById(reminderId) else null
-                val note = reminder?.let { db.noteDao().getById(it.noteId) }
-                val valid = reminder != null && !reminder.isSent && note != null && !note.isArchived
-                if (valid) {
-                    sendNotification(context, message, reminderId.toInt(), isAlarm)
-                    db.reminderDao().markSent(reminderId)
-                }
-            } finally {
-                pending.finish()
-            }
+        // Tanpa validasi di sini (permintaan user): pendaftaran alarm basi dicabut
+        // lebih awal oleh AlarmJanitor.sweep saat app dibuka / worker per jam.
+        sendNotification(context, message, reminderId.toInt(), isAlarm)
+
+        if (reminderId >= 0) CoroutineScope(Dispatchers.IO).launch {
+            AppDatabase.get(context).reminderDao().markSent(reminderId)
         }
     }
 

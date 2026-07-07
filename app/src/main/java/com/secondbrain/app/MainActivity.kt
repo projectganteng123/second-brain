@@ -35,8 +35,10 @@ class MainActivity : ComponentActivity() {
         val prefs = PrefsManager(this)
         val openInput = intent?.getBooleanExtra(EXTRA_OPEN_INPUT, false) == true
 
-        // Proses catatan offline yang tertunda saat app dibuka
-        lifecycleScope.launch {
+        // Saat app dibuka, di latar & bertahap: cabut alarm basi (catatan yang sudah
+        // dihapus/diarsip/diproses ulang), lalu proses catatan offline yang tertunda.
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.secondbrain.app.notification.AlarmJanitor.sweep(applicationContext) }
             runCatching { PendingProcessor.processAll(app.repository, prefs) }
         }
 

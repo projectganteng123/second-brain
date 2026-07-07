@@ -16,6 +16,7 @@ class ReminderWorker(
 
     override suspend fun doWork(): Result {
         return runCatching {
+            AlarmJanitor.sweep(applicationContext)   // cabut pendaftaran alarm basi dulu
             ReminderScheduler.scheduleUpcoming(applicationContext)
             Result.success()
         }.getOrDefault(Result.retry())
