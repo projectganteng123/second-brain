@@ -270,6 +270,7 @@ fun InputScreen(
             withContext(Dispatchers.IO) { prepare() }
                 .onSuccess { vm.readMedia(it) }
                 .onFailure {
+                    com.secondbrain.app.util.DebugLog.log("Baca ✕ siapkan file", it.message ?: it.toString())
                     Toast.makeText(context, it.message ?: "File tidak bisa dibaca", Toast.LENGTH_LONG).show()
                 }
         }

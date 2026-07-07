@@ -99,6 +99,7 @@ class InputViewModel(
                     _pendingInserts.update { it + "Dari ${m.source}: ${m.text}" }
                 }.onFailure {
                     if (it !is kotlinx.coroutines.CancellationException) {
+                        com.secondbrain.app.util.DebugLog.log("Baca ✕ AI", it.message ?: it.toString())
                         _readMessage.value = it.message ?: "Gagal membaca file"
                     }
                 }

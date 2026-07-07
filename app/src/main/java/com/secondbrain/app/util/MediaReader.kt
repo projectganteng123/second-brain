@@ -81,13 +81,20 @@ object MediaReader {
 
     /** Decode dengan inSampleSize agar gambar besar tidak bikin kehabisan memori. */
     private fun decodeScaled(open: () -> InputStream?): Bitmap {
+        // Pass 1: baca dimensi saja. PENTING: decodeStream dengan inJustDecodeBounds=true
+        // MEMANG selalu mengembalikan null — jangan dipakai sebagai indikator gagal.
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: throw RuntimeException("Gambar tidak bisa dibuka.")
+        (open() ?: throw RuntimeException("Gambar tidak bisa dibuka."))
+            .use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw RuntimeException("Format gambar tidak dikenali.")
+        }
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 1536) sample *= 2
+        // Pass 2: decode sungguhan (di sini null = benar-benar gagal).
         val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        return open()?.use { BitmapFactory.decodeStream(it, null, opts) }
+        return (open() ?: throw RuntimeException("Gambar tidak bisa dibuka."))
+            .use { BitmapFactory.decodeStream(it, null, opts) }
             ?: throw RuntimeException("Gambar tidak bisa dibaca.")
     }
 
