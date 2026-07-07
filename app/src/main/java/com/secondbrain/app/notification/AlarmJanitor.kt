@@ -24,6 +24,27 @@ object AlarmJanitor {
     private const val PROBE_MARGIN = 2000L
     private const val MIN_PROBE = 2000L
 
+    /** Cabut pendaftaran alarm untuk id pengingat tertentu — dipanggil LANGSUNG saat
+     *  catatan dihapus/diarsip/diproses-ulang, tanpa menunggu sweep berikutnya. */
+    fun cancelIds(context: Context, ids: List<Long>) {
+        if (ids.isEmpty()) return
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        var canceled = 0
+        for (id in ids) {
+            val pi = PendingIntent.getBroadcast(
+                context, id.toInt(),
+                Intent(context, ReminderReceiver::class.java),
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            )
+            if (pi != null) {
+                alarmManager.cancel(pi)
+                pi.cancel()
+                canceled++
+            }
+        }
+        if (canceled > 0) DebugLog.log("Alarm 🧹 cabut", "$canceled alarm dicabut langsung")
+    }
+
     suspend fun sweep(context: Context) {
         val dao = AppDatabase.get(context).reminderDao()
         val alive = dao.getAliveIds().toHashSet()

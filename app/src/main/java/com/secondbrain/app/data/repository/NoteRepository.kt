@@ -15,8 +15,18 @@ import java.time.format.DateTimeFormatter
 class NoteRepository(
     private val noteDao: NoteDao,
     private val reminderDao: ReminderDao,
-    private val gson: Gson = GsonProvider.gson
+    private val gson: Gson = GsonProvider.gson,
+    /** Untuk mencabut alarm di AlarmManager LANGSUNG saat pengingat dihapus (nullable untuk tes). */
+    private val appContext: android.content.Context? = null
 ) {
+
+    /** Hapus baris pengingat sebuah catatan DAN cabut pendaftarannya di AlarmManager
+     *  seketika — tidak menunggu sweep berikutnya. */
+    private suspend fun removeReminders(noteId: Long) {
+        val ids = reminderDao.getIdsByNote(noteId)
+        reminderDao.deleteByNote(noteId)
+        appContext?.let { com.secondbrain.app.notification.AlarmJanitor.cancelIds(it, ids) }
+    }
 
     fun getAllActive(): Flow<List<NoteEntity>> = noteDao.getAllActive()
     fun getArchived(): Flow<List<NoteEntity>> = noteDao.getArchived()
@@ -69,7 +79,7 @@ class NoteRepository(
             isPendingExtraction = false,
             updatedAt = System.currentTimeMillis()
         ))
-        reminderDao.deleteByNote(id)
+        removeReminders(id)
         generateReminders(id, metadata, alarmOffsetMinutes, existing.useAlarm)
     }
 
@@ -77,14 +87,14 @@ class NoteRepository(
         val existing = noteDao.getById(id) ?: return
         noteDao.update(existing.copy(useAlarm = useAlarm, updatedAt = System.currentTimeMillis()))
         val meta = metadataFrom(existing) ?: return
-        reminderDao.deleteByNote(id)
+        removeReminders(id)
         generateReminders(id, meta, alarmOffsetMinutes, useAlarm)
     }
 
     suspend fun update(note: NoteEntity) = noteDao.update(note)
 
     suspend fun delete(note: NoteEntity) {
-        reminderDao.deleteByNote(note.id)   // jangan tinggalkan pengingat yatim
+        removeReminders(note.id)   // hapus baris + cabut alarm-nya seketika
         noteDao.delete(note)
     }
 
@@ -92,7 +102,7 @@ class NoteRepository(
 
     suspend fun setArchived(id: Long, archived: Boolean) {
         // Catatan diarsipkan tidak boleh berbunyi lagi (dibuat ulang saat catatan diedit/dipulihkan+diedit)
-        if (archived) reminderDao.deleteByNote(id)
+        if (archived) removeReminders(id)
         noteDao.setArchived(id, archived)
     }
     suspend fun setStatus(id: Long, status: NoteStatus?) = noteDao.setStatus(id, status?.name)
@@ -120,7 +130,7 @@ class NoteRepository(
             if (!n.isArchived) {
                 val meta = metadataFrom(n)
                 if (meta != null) {
-                    reminderDao.deleteByNote(n.id)
+                    removeReminders(n.id)
                     generateReminders(n.id, meta, alarmOffsetMinutes, n.useAlarm)
                 }
             }

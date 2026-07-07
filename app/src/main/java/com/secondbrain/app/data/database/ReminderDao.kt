@@ -27,6 +27,9 @@ interface ReminderDao {
     @Query("SELECT id FROM reminders WHERE isSent = 0")
     suspend fun getAliveIds(): List<Long>
 
+    @Query("SELECT id FROM reminders WHERE noteId = :noteId")
+    suspend fun getIdsByNote(noteId: Long): List<Long>
+
     @Query("UPDATE reminders SET isSent = 1 WHERE id = :id")
     suspend fun markSent(id: Long)
 
