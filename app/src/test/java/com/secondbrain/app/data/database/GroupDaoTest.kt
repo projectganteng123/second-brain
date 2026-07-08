@@ -15,8 +15,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+// application = Application polos: SecondBrainApp.onCreate menjalankan WorkManager
+// yang tidak terinisialisasi di unit test (IllegalStateException di WorkManagerImpl).
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
+@Config(sdk = [34], application = android.app.Application::class)
 class GroupDaoTest {
 
     private lateinit var db: AppDatabase
