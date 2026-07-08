@@ -47,6 +47,7 @@ fun NoteDetailScreen(
 
     var editing by remember { mutableStateOf(false) }
     var editText by remember(state.note?.id) { mutableStateOf(state.note?.rawText ?: "") }
+    var confirmReExtract by remember { mutableStateOf(false) }
 
     val bgColor = if (isDark) Lavender900 else Gray50
 
@@ -145,7 +146,7 @@ fun NoteDetailScreen(
                         GlassButton(
                             text = if (state.reExtracting) "Memproses..." else "Simpan & proses ulang",
                             icon = Icons.Outlined.AutoAwesome,
-                            onClick = { vm.reExtract(editText); editing = false },
+                            onClick = { confirmReExtract = true },
                             accent = true,
                             enabled = !state.reExtracting,
                             modifier = Modifier.weight(1f)
@@ -169,37 +170,78 @@ fun NoteDetailScreen(
                 Spacer(Modifier.height(10.dp))
             }
 
-            // Metadata
-            if (meta != null) {
-                GlassCard {
-                    SectionLabel("metadata", modifier = Modifier.padding(bottom = 6.dp))
-                    MetadataRow("Judul", meta.title.ifBlank { "-" })
-                    MetadataRow("Jenis", meta.type.label)
-                    if (meta.startTime != null || meta.endTime != null) {
+            // Metadata (read-only + mode edit lengkap dengan picker jam/kalender)
+            var editingMeta by remember(note.id) { mutableStateOf(false) }
+            var editedMeta by remember(note.id) { mutableStateOf<Metadata?>(null) }
+            var alarmTimesEnabled by remember(note.id) { mutableStateOf(false) }
+            val displayMeta = editedMeta ?: meta
+            GlassCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SectionLabel("metadata")
+                    TextButton(onClick = {
+                        if (editingMeta) {
+                            editingMeta = false; editedMeta = null
+                        } else {
+                            // Waktu alarm dinormalkan ke field baru (fallback legacy)
+                            val base = (meta ?: Metadata()).let {
+                                it.copy(
+                                    alarmTimes = it.alarmTimesEffective(),
+                                    preparationTime = null,
+                                    preparationTimes = null
+                                )
+                            }
+                            editedMeta = base
+                            alarmTimesEnabled = base.alarmTimes.orEmpty().isNotEmpty()
+                            editingMeta = true
+                        }
+                    }) {
+                        Icon(
+                            if (editingMeta) Icons.Outlined.Close else Icons.Outlined.Edit,
+                            null, modifier = Modifier.size(16.dp), tint = Lavender600
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (editingMeta) "Tutup" else "Edit", color = Lavender600,
+                            style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (displayMeta == null) {
+                    Text(
+                        "Belum ada metadata — ketuk Edit untuk mengisi manual.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDark) Lavender400 else Gray600
+                    )
+                } else {
+                    MetadataRow("Judul", displayMeta.title.ifBlank { "-" })
+                    MetadataRow("Jenis", displayMeta.type.label)
+                    if (displayMeta.startTime != null || displayMeta.endTime != null) {
                         MetadataRow("Waktu", buildString {
-                            meta.startTime?.let { append(it) }
-                            meta.endTime?.let { append(" – $it") }
+                            displayMeta.startTime?.let { append(it) }
+                            displayMeta.endTime?.let { append(" – $it") }
                         })
                     }
-                    if (meta.recurrenceDates.isNotEmpty()) {
-                        MetadataRow("Tanggal", meta.recurrenceDates.joinToString(", ") {
+                    if (displayMeta.recurrenceDates.isNotEmpty()) {
+                        MetadataRow("Tanggal", displayMeta.recurrenceDates.joinToString(", ") {
                             com.secondbrain.app.util.TimeFormat.dateMedium(it)
                         })
                     }
-                    if (meta.locations.isNotEmpty()) {
-                        MetadataRow("Lokasi", meta.locations.joinToString(", ") { it.value })
+                    if (displayMeta.locations.isNotEmpty()) {
+                        MetadataRow("Lokasi", displayMeta.locations.joinToString(", ") { it.value })
                     }
-                    if (meta.entities.people.isNotEmpty()) {
-                        MetadataRow("Orang", meta.entities.people.joinToString(", "))
+                    if (displayMeta.entities.people.isNotEmpty()) {
+                        MetadataRow("Orang", displayMeta.entities.people.joinToString(", "))
                     }
-                    if (meta.entities.organizations.isNotEmpty()) {
-                        MetadataRow("Organisasi", meta.entities.organizations.joinToString(", "))
+                    if (displayMeta.entities.organizations.isNotEmpty()) {
+                        MetadataRow("Organisasi", displayMeta.entities.organizations.joinToString(", "))
                     }
-                    if (meta.keywords.isNotEmpty()) {
-                        MetadataRow("Keywords", meta.keywords.joinToString(", "))
+                    if (displayMeta.keywords.isNotEmpty()) {
+                        MetadataRow("Keywords", displayMeta.keywords.joinToString(", "))
                     }
-                    if (meta.actions.isNotEmpty()) {
-                        MetadataRow("Aksi", meta.actions.joinToString("\n") {
+                    if (displayMeta.actions.isNotEmpty()) {
+                        MetadataRow("Aksi", displayMeta.actions.joinToString("\n") {
                             buildString {
                                 append("• ${it.action}")
                                 it.owner?.let { o -> append(" ($o)") }
@@ -207,26 +249,64 @@ fun NoteDetailScreen(
                             }
                         })
                     }
-                    val extraSchedules = meta.extraSchedules.orEmpty()
+                    val extraSchedules = displayMeta.extraSchedules.orEmpty()
                     if (extraSchedules.isNotEmpty()) {
                         MetadataRow("Kegiatan lain", extraSchedules.joinToString("\n") { it.displayLine() })
                     }
-                    val transactions = meta.transactions.orEmpty()
+                    val transactions = displayMeta.transactions.orEmpty()
                     if (transactions.isNotEmpty()) {
                         MetadataRow("Transaksi", transactions.joinToString("\n") { it.displayLine() })
                     }
-                    if (meta.summary.isNotBlank()) {
+                    if (displayMeta.summary.isNotBlank()) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            meta.summary,
+                            displayMeta.summary,
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isDark) Lavender200 else Gray600,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
                 }
-                Spacer(Modifier.height(10.dp))
             }
+
+            // Mode edit: editor lengkap + waktu alarm + Simpan/Batal
+            editedMeta?.takeIf { editingMeta }?.let { current ->
+                Spacer(Modifier.height(8.dp))
+                MetadataEditor(
+                    metadata = current,
+                    isDark = isDark,
+                    onChange = { editedMeta = it }
+                )
+                Spacer(Modifier.height(8.dp))
+                GlassCard {
+                    AlarmTimesSection(
+                        times = current.alarmTimes.orEmpty(),
+                        enabled = alarmTimesEnabled,
+                        onEnabledChange = { alarmTimesEnabled = it },
+                        onTimesChange = { editedMeta = current.copy(alarmTimes = it) },
+                        isDark = isDark
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GlassButton(
+                        text = "Simpan metadata",
+                        icon = Icons.Outlined.Save,
+                        onClick = {
+                            vm.saveMetadata(current.copy(
+                                alarmTimes = if (alarmTimesEnabled)
+                                    current.alarmTimes.orEmpty().filter { it.isNotBlank() }
+                                else emptyList()
+                            ))
+                            editingMeta = false; editedMeta = null
+                        },
+                        accent = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    GlassButton(text = "Batal", onClick = { editingMeta = false; editedMeta = null })
+                }
+            }
+            Spacer(Modifier.height(10.dp))
 
             // Grup catatan: keanggotaan + saran AI yang belum dikonsumsi (jalur pending)
             val noteGroups by vm.groupsOf(note.id).collectAsState(initial = emptyList())
@@ -343,5 +423,26 @@ fun NoteDetailScreen(
 
             Spacer(Modifier.height(40.dp))
         }
+    }
+
+    // Konfirmasi sebelum proses ulang: hasil AI menimpa SEMUA metadata, termasuk editan manual
+    if (confirmReExtract) {
+        AlertDialog(
+            onDismissRequest = { confirmReExtract = false },
+            title = { Text("Proses ulang dengan AI?") },
+            text = {
+                Text("Semua metadata — termasuk yang pernah kamu edit manual — akan ditimpa hasil ekstraksi AI yang baru.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReExtract = false
+                    vm.reExtract(editText)
+                    editing = false
+                }) { Text("Lanjut") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReExtract = false }) { Text("Batal") }
+            }
+        )
     }
 }

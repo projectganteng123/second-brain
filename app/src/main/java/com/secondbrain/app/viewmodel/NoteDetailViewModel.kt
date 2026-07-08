@@ -42,6 +42,25 @@ class NoteDetailViewModel(
         }
     }
 
+    /** Simpan metadata hasil edit manual (tanpa AI). Pengingat/alarm dibuat ulang oleh repo. */
+    fun saveMetadata(meta: Metadata) {
+        val note = _state.value.note ?: return
+        viewModelScope.launch {
+            runCatching {
+                repo.updateMetadata(note.id, meta, prefs.getAlarmOffsetMinutes())
+                val refreshed = repo.getById(note.id)
+                _state.value = _state.value.copy(
+                    note = refreshed,
+                    metadata = refreshed?.let { repo.metadataFrom(it) },
+                    message = "Metadata disimpan"
+                )
+            }.onFailure { e ->
+                DebugLog.log("Detail ✕ saveMetadata", e.stackTraceToString().take(800))
+                _state.value = _state.value.copy(message = "Gagal menyimpan: ${e.message}")
+            }
+        }
+    }
+
     fun setPrioritas(p: Priority?) {
         val note = _state.value.note ?: return
         viewModelScope.launch {

@@ -238,6 +238,34 @@ Matikan internet → simpan catatan → nyalakan internet → buka app (PendingP
 Settings → edit prompt Universal, hapus baris GRUP YANG SUDAH ADA.
 - [ ] Ekstraksi tetap jalan; tidak ada saran grup; pilih grup manual tetap bisa
 
+### B5. Edit semua metadata di halaman detail
+
+#### TES 36 — Mode edit metadata di Detail
+Buka catatan apa pun yang punya metadata → kartu "metadata" → tombol **Edit**.
+- [ ] Editor lengkap muncul: judul, jenis (chips), jam mulai/selesai (picker jam), tanggal (kalender multi-tanggal), lokasi/orang/organisasi/keywords, ringkasan, action items (deadline = picker tanggal+jam), Kegiatan lain, Transaksi, Waktu alarm
+- [ ] Ubah judul + jam mulai → **Simpan metadata** → snackbar "Metadata disimpan", tampilan read-only ikut berubah
+- [ ] Ubah sesuatu → **Batal** → perubahan TIDAK tersimpan
+- [ ] Ubah tanggal ke besok + nyalakan Waktu alarm → simpan → alarm/pengingat terjadwal ulang (cek notifikasi saat waktunya / Debug Log)
+
+#### TES 37 — Editor Kegiatan lain (extraSchedules)
+Buka catatan hasil ekstraksi multi-kegiatan (atau tambah manual):
+- [ ] "Tambah kegiatan" → isi judul, jenis, tanggal (kalender), jam mulai (picker), switch Alarm keras → simpan → baris "Kegiatan lain" tampil di read-only & pengingatnya dibuat
+- [ ] Hapus kegiatan → simpan → pengingat kegiatan itu ikut hilang
+
+#### TES 38 — Editor Transaksi
+- [ ] "Tambah transaksi" → isi item, Keluar/Masuk, nominal, kategori, tanggal → simpan → transaksi muncul di halaman Keuangan
+- [ ] "Detail lainnya ▾" → qty/satuan/mata uang/metode/merchant/orang/catatan bisa diisi
+- [ ] Nominal diketik "30.000" terbaca 30000; diketik "abc" → field merah, nilai lama tidak berubah
+- [ ] Editor yang sama juga muncul di Preview (sebelum simpan catatan baru)
+
+#### TES 39 — Konfirmasi proses ulang
+Detail → Edit teks asli → "Simpan & proses ulang".
+- [ ] Dialog konfirmasi muncul menyebut metadata manual akan ditimpa; **Batal** = tidak terjadi apa-apa; **Lanjut** = ekstraksi jalan
+
+#### TES 40 — Catatan tanpa metadata (pending)
+Buka catatan yang masih pending ekstraksi (offline).
+- [ ] Kartu metadata menampilkan "Belum ada metadata — ketuk Edit untuk mengisi manual"; isi manual → simpan → metadata tampil & status pending hilang
+
 ---
 
 ## Catatan Lingkungan
