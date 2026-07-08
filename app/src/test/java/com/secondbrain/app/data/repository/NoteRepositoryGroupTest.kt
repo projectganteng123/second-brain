@@ -78,9 +78,10 @@ class NoteRepositoryGroupTest {
     fun consumeSuggestion_terima() = runBlocking {
         val id = repo.save(rawText = "c",
             metadata = Metadata(title = "t", suggestedGroups = listOf("Saran A", "Saran B")))
+        // Pencocokan saran case-insensitive; grup BARU dibuat dengan ejaan yang diterima ("saran a")
         repo.consumeGroupSuggestion(id, "saran a", accept = true)
 
-        assertEquals(listOf("Saran A"), repo.groupsOfNote(id).first().map { it.name })
+        assertEquals(listOf("saran a"), repo.groupsOfNote(id).first().map { it.name })
         val meta = repo.metadataFrom(repo.getById(id)!!)!!
         assertEquals(listOf("Saran B"), meta.suggestedGroups)
     }
