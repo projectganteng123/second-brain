@@ -50,6 +50,22 @@ class InputViewModel(
     fun removeAttachment(a: Attachment) { _attachments.value = _attachments.value - a }
     fun clearAttachments() { _attachments.value = emptyList() }
 
+    // ---- Grup catatan (dipilih di Preview; saran AI pra-centang bila cocok grup existing) ----
+    private val _selectedGroups = MutableStateFlow<List<String>>(emptyList())
+    val selectedGroups: StateFlow<List<String>> = _selectedGroups.asStateFlow()
+    /** Daftar grup aktif untuk picker di Preview. */
+    val activeGroups = repo.activeGroups()
+
+    fun toggleGroup(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        _selectedGroups.update { cur ->
+            if (cur.any { it.equals(clean, ignoreCase = true) })
+                cur.filterNot { it.equals(clean, ignoreCase = true) }
+            else cur + clean
+        }
+    }
+
     // Apakah user sudah mengubah prioritas/status manual (agar rekomendasi AI tidak menimpa pilihan user)
     private var userTouchedPrioritas = false
     private var userTouchedStatus = false
@@ -146,6 +162,11 @@ class InputViewModel(
                     // Toggle alarm di Preview: mengikuti default di Settings; rekomendasi AI
                     // hanya bisa MENYALAKAN (user tetap bisa mematikan di Preview).
                     _useAlarm.value = prefs.isEventAlarmDefaultOn() || meta.suggestAlarm
+                    // Saran yang cocok grup EXISTING → pra-centang; usulan baru TIDAK dicentang.
+                    val existing = repo.activeGroupNames()
+                    _selectedGroups.value = meta.suggestedGroups.orEmpty().filter { s ->
+                        existing.any { it.trim().equals(s.trim(), ignoreCase = true) }
+                    }
                     _uiState.value = InputUiState.Preview(meta)
                 }
                 .onFailure {
@@ -175,12 +196,13 @@ class InputViewModel(
             runCatching {
                 repo.save(
                     rawText = _rawText.value.trim(),
-                    metadata = metadata,
+                    metadata = metadata.copy(suggestedGroups = null),   // saran sudah dikonsumsi
                     prioritas = _selectedPrioritas.value,
                     status = _selectedStatus.value,
                     alarmOffsetMinutes = prefs.getAlarmOffsetMinutes(),
                     useAlarm = _useAlarm.value,
-                    attachments = _attachments.value
+                    attachments = _attachments.value,
+                    groupNames = _selectedGroups.value
                 )
             }.onSuccess { _uiState.value = InputUiState.Saved }
              .onFailure { _uiState.value = InputUiState.Error(it.message ?: "Gagal menyimpan") }
@@ -213,6 +235,7 @@ class InputViewModel(
         _selectedStatus.value = NoteStatus.BELUM_MULAI
         _useAlarm.value = false
         _attachments.value = emptyList()
+        _selectedGroups.value = emptyList()
         userTouchedPrioritas = false
         userTouchedStatus = false
         _uiState.value = InputUiState.Idle

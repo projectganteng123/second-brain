@@ -208,6 +208,21 @@ fun PreviewScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // Grup catatan: saran AI (cocok existing = tercentang; baru = tidak) + pilihan manual
+            val activeGroups by vm.activeGroups.collectAsState(initial = emptyList())
+            val selectedGroups by vm.selectedGroups.collectAsState()
+            GlassCard {
+                SectionLabel("grup", modifier = Modifier.padding(bottom = 8.dp))
+                GroupPickerSection(
+                    selectedNames = selectedGroups,
+                    suggestions = metadata.suggestedGroups.orEmpty(),
+                    existingNames = activeGroups.map { it.name },
+                    onToggle = vm::toggleGroup
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             // Manual fields
             GlassCard {
                 SectionLabel("pengaturan manual", modifier = Modifier.padding(bottom = 8.dp))
