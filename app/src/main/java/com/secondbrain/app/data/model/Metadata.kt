@@ -27,7 +27,10 @@ data class Metadata(
     /** Kegiatan terjadwal ke-2 dst. dalam satu catatan (kegiatan #1 mengisi field jadwal utama). */
     val extraSchedules: List<ExtraSchedule>? = null,
     /** Rekomendasi AI: pengingat catatan ini sebaiknya alarm keras (pra-centang di Preview). */
-    val suggestAlarm: Boolean = false
+    val suggestAlarm: Boolean = false,
+    /** Saran grup dari AI (nama grup; belum tentu ada di DB). Nullable agar metadataJson
+     *  catatan LAMA aman dibaca Gson. Dikosongkan setelah dikonsumsi (Preview/Detail). */
+    val suggestedGroups: List<String>? = null
 ) {
     /** Daftar waktu alarm efektif — field baru, fallback ke field legacy catatan lama. */
     fun alarmTimesEffective(): List<String> =

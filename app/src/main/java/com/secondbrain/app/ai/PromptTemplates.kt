@@ -17,6 +17,7 @@ object PromptTemplates {
 
     const val PLACEHOLDER_NOW = "{now}"
     const val PLACEHOLDER_NOTE = "{note}"
+    const val PLACEHOLDER_GROUPS = "{groups}"
 
     /** Waktu sekarang termasuk NAMA HARI Indonesia — penting agar AI benar menghitung
      *  "Jumat depan" / "Senin besok" menjadi tanggal absolut. */
@@ -34,6 +35,8 @@ Ekstrak metadata UMUM dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON tan
 WAKTU SEKARANG: {now}
 (digunakan hanya untuk mengubah deadline relatif pada action menjadi tanggal & jam absolut)
 
+GRUP YANG SUDAH ADA: {groups}
+
 Catatan:
 "{note}"
 
@@ -45,6 +48,7 @@ Struktur JSON:
   "type": "meeting|task|reminder|event|note|idea|personal",
   "summary": "1-3 kalimat",
   "keywords": ["kata penting"],
+  "suggestedGroups": ["nama grup"],
   "locations": [
     {
       "type": "location|platform",
@@ -70,6 +74,10 @@ Aturan:
 - title maksimal 8 kata.
 - summary 1-3 kalimat singkat.
 - keywords berisi kata penting, termasuk nama produk, proyek, atau topik bila ada.
+- suggestedGroups: pilih dari GRUP YANG SUDAH ADA yang paling sesuai isi catatan (boleh lebih dari satu).
+- suggestedGroups boleh berisi MAKSIMAL 1 nama grup BARU (2-4 kata) hanya jika catatan jelas bagian
+  dari proyek/tema berulang dan tidak ada grup yang cocok di daftar.
+- Jika tidak ada grup yang relevan, suggestedGroups = [].
 - locations hanya berisi tempat atau platform yang benar-benar disebut.
 - entities hanya berisi entitas yang benar-benar muncul di catatan.
 - Jika people tidak disebut atau tidak jelas, isi dengan ["saya"].
@@ -252,10 +260,11 @@ $content
         ExtractionKind.SCHEDULE -> DEFAULT_SCHEDULE
     }
 
-    fun fill(template: String, now: String, note: String): String =
+    fun fill(template: String, now: String, note: String, groups: List<String> = emptyList()): String =
         template
             .replace(PLACEHOLDER_NOW, now)
             .replace(PLACEHOLDER_NOTE, note)
+            .replace(PLACEHOLDER_GROUPS, com.secondbrain.app.data.GsonProvider.gson.toJson(groups))
 
     /** Prompt tanya-jawab, dipakai semua provider. */
     fun qaPrompt(question: String, contextNotes: List<String>): String {

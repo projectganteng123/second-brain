@@ -26,6 +26,7 @@ object ExtractionParser {
         val type: String? = null,
         val summary: String? = null,
         val keywords: List<String>? = null,
+        val suggestedGroups: List<String>? = null,
         val locations: List<LocationDto>? = null,
         val entities: EntitiesDto? = null,
         val actions: List<ActionDto>? = null,
@@ -140,7 +141,11 @@ object ExtractionParser {
                 .filter { it.isNotBlank() },
             transactions = transactions.takeIf { it.isNotEmpty() },
             extraSchedules = extras.takeIf { it.isNotEmpty() },
-            suggestAlarm = main?.useAlarm == true
+            suggestAlarm = main?.useAlarm == true,
+            suggestedGroups = u.suggestedGroups.orEmpty()
+                .map { it.trim() }.filter { it.isNotBlank() }
+                .distinctBy { it.lowercase() }
+                .takeIf { it.isNotEmpty() }
         )
     }
 

@@ -43,7 +43,11 @@ class AIService(
     private val prompts: ExtractionPrompts?
 ) {
 
-    suspend fun extractMetadata(rawText: String, now: String): Result<Metadata> = runCatching {
+    suspend fun extractMetadata(
+        rawText: String,
+        now: String,
+        groupNames: List<String> = emptyList()
+    ): Result<Metadata> = runCatching {
         val p = prompts ?: throw IllegalStateException("AIService ini dibuat untuk tanya-jawab, bukan ekstraksi")
 
         // Hemat kuota: prompt Keuangan/Acara hanya jalan bila teksnya mengindikasikan
@@ -67,7 +71,7 @@ class AIService(
             fun launchPrompt(template: String) = slot++.let { offset ->
                 async {
                     runFallback(rotatedCombos(offset)) {
-                        it.generateJson(PromptTemplates.fill(template, now, rawText))
+                        it.generateJson(PromptTemplates.fill(template, now, rawText, groupNames))
                     }
                 }
             }
