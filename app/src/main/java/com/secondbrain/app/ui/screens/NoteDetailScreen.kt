@@ -21,7 +21,8 @@ fun NoteDetailScreen(
     vm: NoteDetailViewModel,
     noteId: Long,
     onBack: () -> Unit,
-    onDeleted: () -> Unit
+    onDeleted: () -> Unit,
+    onOpenGroup: (Long) -> Unit
 ) {
     val isDark = isSystemDark()
     val state by vm.state.collectAsState()
@@ -226,6 +227,67 @@ fun NoteDetailScreen(
                 }
                 Spacer(Modifier.height(10.dp))
             }
+
+            // Grup catatan: keanggotaan + saran AI yang belum dikonsumsi (jalur pending)
+            val noteGroups by vm.groupsOf(note.id).collectAsState(initial = emptyList())
+            val allGroups by vm.activeGroups().collectAsState(initial = emptyList())
+            var showGroupPicker by remember { mutableStateOf(false) }
+            GlassCard {
+                SectionLabel("grup", modifier = Modifier.padding(bottom = 6.dp))
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    noteGroups.forEach { g ->
+                        GroupChip(
+                            label = g.name,
+                            selected = true,
+                            isDark = isDark,
+                            onClick = { onOpenGroup(g.id) },
+                            onRemove = { vm.removeFromGroup(g.id) }
+                        )
+                    }
+                    GroupChip("+ Grup", selected = false, isDark = isDark,
+                        onClick = { showGroupPicker = true })
+                }
+
+                // Saran AI (tap = terima, ✕ = tolak) — hanya yang belum jadi anggota
+                val pendingSuggestions = meta?.suggestedGroups.orEmpty().filterNot { s ->
+                    noteGroups.any { it.name.trim().equals(s.trim(), ignoreCase = true) }
+                }
+                if (pendingSuggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Saran AI — ketuk untuk menerima:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isDark) Lavender400 else Gray600)
+                    Spacer(Modifier.height(4.dp))
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        pendingSuggestions.forEach { s ->
+                            GroupChip(
+                                label = s.trim(),
+                                selected = false,
+                                isDark = isDark,
+                                onClick = { vm.acceptGroupSuggestion(s) },
+                                onRemove = { vm.rejectGroupSuggestion(s) }
+                            )
+                        }
+                    }
+                }
+            }
+            if (showGroupPicker) {
+                GroupPickerDialog(
+                    existingNames = allGroups.map { it.name },
+                    alreadySelected = noteGroups.map { it.name },
+                    onPick = { vm.addToGroup(it); showGroupPicker = false },
+                    onDismiss = { showGroupPicker = false }
+                )
+            }
+            Spacer(Modifier.height(10.dp))
 
             // Management: priority & status
             GlassCard {

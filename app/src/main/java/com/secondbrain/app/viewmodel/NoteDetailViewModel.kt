@@ -128,6 +128,39 @@ class NoteDetailViewModel(
         }
     }
 
+    // ---- Grup ----
+
+    fun groupsOf(noteId: Long) = repo.groupsOfNote(noteId)
+    fun activeGroups() = repo.activeGroups()
+
+    fun addToGroup(name: String) {
+        val note = _state.value.note ?: return
+        viewModelScope.launch {
+            repo.assignGroups(note.id, listOf(name))
+        }
+    }
+
+    fun removeFromGroup(groupId: Long) {
+        val note = _state.value.note ?: return
+        viewModelScope.launch { repo.removeNoteFromGroup(note.id, groupId) }
+    }
+
+    fun acceptGroupSuggestion(name: String) = consumeSuggestion(name, accept = true)
+    fun rejectGroupSuggestion(name: String) = consumeSuggestion(name, accept = false)
+
+    private fun consumeSuggestion(name: String, accept: Boolean) {
+        val note = _state.value.note ?: return
+        viewModelScope.launch {
+            repo.consumeGroupSuggestion(note.id, name, accept)
+            val refreshed = repo.getById(note.id)
+            _state.value = _state.value.copy(
+                note = refreshed,
+                metadata = refreshed?.let { repo.metadataFrom(it) },
+                message = if (accept) "Ditambahkan ke grup \"${name.trim()}\"" else null
+            )
+        }
+    }
+
     fun clearMessage() {
         _state.value = _state.value.copy(message = null)
     }

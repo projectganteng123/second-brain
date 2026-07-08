@@ -176,7 +176,8 @@ fun NavGraph(
                 vm = detailVm,
                 noteId = noteId,
                 onBack = { navController.popBackStack() },
-                onDeleted = { navController.popBackStack(Screen.Home.route, false) }
+                onDeleted = { navController.popBackStack(Screen.Home.route, false) },
+                onOpenGroup = { }   // diganti Task 7: navigasi ke isi grup
             )
         }
     }
