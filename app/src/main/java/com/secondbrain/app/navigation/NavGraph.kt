@@ -27,6 +27,10 @@ sealed class Screen(val route: String) {
     object Gantt     : Screen("gantt")
     object Events    : Screen("events")
     object Finance   : Screen("finance")
+    object Groups    : Screen("groups")
+    object GroupNotes : Screen("group/{groupId}") {
+        fun go(groupId: Long) = "group/$groupId"
+    }
     object Detail    : Screen("detail/{noteId}") {
         fun go(noteId: Long) = "detail/$noteId"
     }
@@ -63,6 +67,7 @@ fun NavGraph(
                 onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) },
                 onOpenEvents = { navController.navigate(Screen.Events.route) },
                 onOpenFinance = { navController.navigate(Screen.Finance.route) },
+                onOpenGroups = { navController.navigate(Screen.Groups.route) },
                 onOpenQa = { navController.navigate(Screen.Qa.route) },
                 onOpenSettings = { navController.navigate(Screen.Settings.route) },
                 onSaved = { }   // tetap di Home; VM sudah di-reset oleh InputScreen
@@ -88,6 +93,27 @@ fun NavGraph(
         composable(Screen.Finance.route) {
             FinanceScreen(
                 repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.Groups.route) {
+            GroupsScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onGroupClick = { id -> navController.navigate(Screen.GroupNotes.go(id)) }
+            )
+        }
+
+        composable(
+            route = Screen.GroupNotes.route,
+            arguments = listOf(navArgument("groupId") { type = NavType.LongType })
+        ) { back ->
+            val groupId = back.arguments?.getLong("groupId") ?: -1L
+            GroupNotesScreen(
+                repo = repo,
+                groupId = groupId,
                 onBack = { navController.popBackStack() },
                 onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
             )
@@ -177,7 +203,7 @@ fun NavGraph(
                 noteId = noteId,
                 onBack = { navController.popBackStack() },
                 onDeleted = { navController.popBackStack(Screen.Home.route, false) },
-                onOpenGroup = { }   // diganti Task 7: navigasi ke isi grup
+                onOpenGroup = { id -> navController.navigate(Screen.GroupNotes.go(id)) }
             )
         }
     }

@@ -23,6 +23,7 @@ fun HomePagerScreen(
     onNoteClick: (Long) -> Unit,
     onOpenEvents: () -> Unit,
     onOpenFinance: () -> Unit,
+    onOpenGroups: () -> Unit,
     onOpenQa: () -> Unit,
     onOpenSettings: () -> Unit,
     onSaved: () -> Unit
@@ -37,6 +38,7 @@ fun HomePagerScreen(
                 onNoteClick = onNoteClick,
                 onOpenEvents = onOpenEvents,
                 onOpenFinance = onOpenFinance,
+                onOpenGroups = onOpenGroups,
                 onOpenQa = onOpenQa,
                 onOpenSettings = onOpenSettings,
                 onBackToInput = { scope.launch { pagerState.animateScrollToPage(1) } }

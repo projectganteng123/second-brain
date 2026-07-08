@@ -45,6 +45,7 @@ fun NotesHomePage(
     onNoteClick: (Long) -> Unit,
     onOpenEvents: () -> Unit,
     onOpenFinance: () -> Unit,
+    onOpenGroups: () -> Unit,
     onOpenQa: () -> Unit,
     onOpenSettings: () -> Unit,
     onBackToInput: () -> Unit
@@ -107,6 +108,9 @@ fun NotesHomePage(
                 )
                 Spacer(Modifier.weight(1f))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Folder, "Halaman grup",
+                        tint = if (isDark) Lavender400 else Lavender600,
+                        modifier = Modifier.size(22.dp).clickable(onClick = onOpenGroups))
                     Icon(Icons.Outlined.Timeline, "Halaman acara",
                         tint = if (isDark) Lavender400 else Lavender600,
                         modifier = Modifier.size(22.dp).clickable(onClick = onOpenEvents))
