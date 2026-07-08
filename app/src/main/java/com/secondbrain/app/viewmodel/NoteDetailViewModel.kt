@@ -101,7 +101,7 @@ class NoteDetailViewModel(
             runCatching {
                 val now = com.secondbrain.app.ai.PromptTemplates.nowString()
                 val service = AIService.forExtraction(prefs)
-                val result = service.extractMetadata(newRawText, now)
+                val result = service.extractMetadata(newRawText, now, repo.activeGroupNames())
                 result.onSuccess { meta ->
                     repo.update(note.copy(rawText = newRawText, updatedAt = System.currentTimeMillis()))
                     repo.updateMetadata(note.id, meta, prefs.getAlarmOffsetMinutes())

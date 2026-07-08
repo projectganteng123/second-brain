@@ -22,7 +22,7 @@ object PendingProcessor {
 
         for (note in pending) {
             val now = PromptTemplates.nowString()
-            service.extractMetadata(note.rawText, now)
+            service.extractMetadata(note.rawText, now, repo.activeGroupNames())
                 .onSuccess { repo.updateMetadata(note.id, it, offset) }
                 .onFailure { DebugLog.log("Pending ✕", "id=${note.id}: ${it.message}") }
         }

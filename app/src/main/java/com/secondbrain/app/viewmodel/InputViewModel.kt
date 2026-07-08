@@ -134,7 +134,7 @@ class InputViewModel(
             }
             val now = com.secondbrain.app.ai.PromptTemplates.nowString()
             val service = AIService.forExtraction(prefs)
-            service.extractMetadata(text, now)
+            service.extractMetadata(text, now, repo.activeGroupNames())
                 .onSuccess { meta ->
                     // Pra-isi prioritas/status dari rekomendasi AI bila user belum memilih manual
                     if (!userTouchedPrioritas) {

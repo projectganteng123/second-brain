@@ -9,7 +9,7 @@ class SecondBrainApp : Application() {
 
     val database by lazy { AppDatabase.get(this) }
     val repository by lazy {
-        NoteRepository(database.noteDao(), database.reminderDao(), appContext = this)
+        NoteRepository(database.noteDao(), database.reminderDao(), database.groupDao(), appContext = this)
     }
 
     override fun onCreate() {

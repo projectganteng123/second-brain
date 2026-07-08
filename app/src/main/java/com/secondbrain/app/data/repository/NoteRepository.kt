@@ -15,6 +15,7 @@ import java.time.format.DateTimeFormatter
 class NoteRepository(
     private val noteDao: NoteDao,
     private val reminderDao: ReminderDao,
+    private val groupDao: com.secondbrain.app.data.database.GroupDao,
     private val gson: Gson = GsonProvider.gson,
     /** Untuk mencabut alarm di AlarmManager LANGSUNG saat pengingat dihapus (nullable untuk tes). */
     private val appContext: android.content.Context? = null
@@ -32,6 +33,83 @@ class NoteRepository(
     fun getArchived(): Flow<List<NoteEntity>> = noteDao.getArchived()
     fun search(query: String): Flow<List<NoteEntity>> = noteDao.search(query)
 
+    // ---- Grup ----
+
+    fun activeGroups(): Flow<List<GroupEntity>> = groupDao.activeGroups()
+    fun activeGroupsWithCount(): Flow<List<com.secondbrain.app.data.database.GroupWithCount>> =
+        groupDao.activeGroupsWithCount()
+    fun notesInGroup(groupId: Long): Flow<List<NoteEntity>> = groupDao.notesInGroup(groupId)
+    fun groupsOfNote(noteId: Long): Flow<List<GroupEntity>> = groupDao.groupsOfNote(noteId)
+    suspend fun activeGroupNames(limit: Int = 50): List<String> = groupDao.activeGroupNames(limit)
+    suspend fun getGroup(id: Long): GroupEntity? = groupDao.getById(id)
+    suspend fun groupMemberCount(groupId: Long): Int = groupDao.memberCount(groupId)
+
+    /** Cari grup by nama (case-insensitive + trim). Belum ada → buat; terarsip → hidupkan
+     *  lagi (nama unik mencakup baris arsip, jadi tidak boleh dibuat kembar). */
+    suspend fun resolveOrCreateGroup(name: String): GroupEntity? {
+        val clean = name.trim()
+        if (clean.isEmpty()) return null
+        groupDao.findByName(clean)?.let { existing ->
+            if (!existing.isArchived) return existing
+            val revived = existing.copy(isArchived = false)
+            groupDao.update(revived)
+            return revived
+        }
+        val id = groupDao.insert(GroupEntity(name = clean))
+        DebugLog.log("DB ✓ grup baru", "\"$clean\" (id=$id)")
+        return groupDao.getById(id)
+    }
+
+    /** Resolve tiap nama lalu tulis keanggotaan (duplikat diabaikan oleh IGNORE). */
+    suspend fun assignGroups(noteId: Long, names: List<String>) {
+        for (n in names) {
+            val g = resolveOrCreateGroup(n) ?: continue
+            groupDao.addCrossRef(NoteGroupCrossRef(noteId = noteId, groupId = g.id))
+        }
+    }
+
+    suspend fun addNoteToGroup(noteId: Long, groupId: Long) =
+        groupDao.addCrossRef(NoteGroupCrossRef(noteId = noteId, groupId = groupId))
+
+    suspend fun removeNoteFromGroup(noteId: Long, groupId: Long) =
+        groupDao.removeCrossRef(noteId, groupId)
+
+    /** Ganti nama grup. false bila nama kosong atau bentrok dengan grup lain. */
+    suspend fun renameGroup(id: Long, newName: String): Boolean {
+        val clean = newName.trim()
+        if (clean.isEmpty()) return false
+        val bentrok = groupDao.findByName(clean)
+        if (bentrok != null && bentrok.id != id) return false
+        val g = groupDao.getById(id) ?: return false
+        groupDao.update(g.copy(name = clean))
+        return true
+    }
+
+    suspend fun setGroupArchived(id: Long, archived: Boolean) {
+        val g = groupDao.getById(id) ?: return
+        groupDao.update(g.copy(isArchived = archived))
+    }
+
+    suspend fun deleteGroup(id: Long) = groupDao.delete(id)
+
+    /** Terima/tolak SATU saran grup pada catatan (jalur pending di Detail).
+     *  accept=true → tulis keanggotaan; dua-duanya menghapus nama itu dari saran. */
+    suspend fun consumeGroupSuggestion(noteId: Long, name: String, accept: Boolean) {
+        val note = noteDao.getById(noteId) ?: return
+        val meta = metadataFrom(note) ?: return
+        if (accept) {
+            resolveOrCreateGroup(name)?.let {
+                groupDao.addCrossRef(NoteGroupCrossRef(noteId = noteId, groupId = it.id))
+            }
+        }
+        val sisa = meta.suggestedGroups.orEmpty()
+            .filterNot { it.trim().equals(name.trim(), ignoreCase = true) }
+        noteDao.update(note.copy(
+            metadataJson = gson.toJson(meta.copy(suggestedGroups = sisa.takeIf { it.isNotEmpty() })),
+            updatedAt = System.currentTimeMillis()
+        ))
+    }
+
     suspend fun save(
         rawText: String,
         metadata: Metadata,
@@ -40,7 +118,8 @@ class NoteRepository(
         source: InputSource = InputSource.TEXT,
         alarmOffsetMinutes: Int = 15,
         useAlarm: Boolean = false,
-        attachments: List<Attachment> = emptyList()
+        attachments: List<Attachment> = emptyList(),
+        groupNames: List<String> = emptyList()
     ): Long {
         val metaJson = gson.toJson(metadata)
         val entity = NoteEntity(
@@ -55,6 +134,7 @@ class NoteRepository(
         val id = noteDao.insert(entity)
         DebugLog.log("DB ✓ simpan", "id=$id, tanggal=${metadata.recurrenceDates}, jam=${metadata.startTime}, alarm=$useAlarm, lampiran=${attachments.size}\nmetadata=$metaJson")
         generateReminders(id, metadata, alarmOffsetMinutes, useAlarm)
+        if (groupNames.isNotEmpty()) assignGroups(id, groupNames)
         return id
     }
 
