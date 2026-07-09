@@ -592,9 +592,43 @@ fun SettingsScreen(
                     )
                 }
 
-                PromptEditor(ExtractionKind.UNIVERSAL, prefs, isDark)
-                PromptEditor(ExtractionKind.FINANCE, prefs, isDark)
-                PromptEditor(ExtractionKind.SCHEDULE, prefs, isDark)
+                // ----- Mode ekstraksi: 1 prompt gabungan (hemat) vs 3 prompt terpisah -----
+                Spacer(Modifier.height(10.dp))
+                var combinedMode by remember { mutableStateOf(prefs.isExtractionCombined()) }
+                Text(
+                    "Mode ekstraksi",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isDark) Lavender50 else Lavender800
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(
+                        selected = combinedMode,
+                        onClick = { combinedMode = true; prefs.setExtractionCombined(true) },
+                        label = { Text("1 prompt gabungan (hemat)", style = MaterialTheme.typography.labelSmall) }
+                    )
+                    FilterChip(
+                        selected = !combinedMode,
+                        onClick = { combinedMode = false; prefs.setExtractionCombined(false) },
+                        label = { Text("3 prompt terpisah", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+                Text(
+                    if (combinedMode)
+                        "Satu panggilan AI per catatan — hemat kuota (cocok dengan model kuat + mode berpikir)."
+                    else
+                        "Tiga panggilan paralel per catatan (Universal, Keuangan, Acara) — masing-masing prompt lebih fokus.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDark) Lavender400 else Gray400
+                )
+
+                if (combinedMode) {
+                    PromptEditor(ExtractionKind.COMBINED, prefs, isDark)
+                } else {
+                    PromptEditor(ExtractionKind.UNIVERSAL, prefs, isDark)
+                    PromptEditor(ExtractionKind.FINANCE, prefs, isDark)
+                    PromptEditor(ExtractionKind.SCHEDULE, prefs, isDark)
+                }
                 PromptEditor(ExtractionKind.MEDIA_READ, prefs, isDark)
                 PromptEditor(ExtractionKind.DOC_READ, prefs, isDark)
             }
@@ -784,8 +818,9 @@ private fun PromptEditor(kind: ExtractionKind, prefs: PrefsManager, isDark: Bool
                         needsNote && !text.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
                             error = "Prompt harus memuat placeholder {note}" +
                                 (if (kind == ExtractionKind.DOC_READ) " (isi file)." else " (teks catatan).")
-                        kind == ExtractionKind.SCHEDULE && !text.contains(PromptTemplates.PLACEHOLDER_NOW) ->
-                            error = "Prompt Acara harus memuat placeholder {now} (waktu sekarang)."
+                        (kind == ExtractionKind.SCHEDULE || kind == ExtractionKind.COMBINED) &&
+                            !text.contains(PromptTemplates.PLACEHOLDER_NOW) ->
+                            error = "Prompt ini harus memuat placeholder {now} (waktu sekarang)."
                         else -> {
                             prefs.saveExtractionPrompt(kind, text.trim())
                             saved = true

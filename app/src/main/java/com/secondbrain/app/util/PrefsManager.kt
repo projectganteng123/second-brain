@@ -66,6 +66,11 @@ class PrefsManager(context: Context) {
     fun getTimeRangeFrom(page: String): String? = prefs.getString("range_${page}_from", null)
     fun getTimeRangeTo(page: String): String? = prefs.getString("range_${page}_to", null)
 
+    /** Mode ekstraksi: true = SATU prompt gabungan (default, hemat token);
+     *  false = 3 prompt terpisah paralel. */
+    fun setExtractionCombined(combined: Boolean) = prefs.edit { putBoolean(KEY_EXTRACTION_COMBINED, combined) }
+    fun isExtractionCombined(): Boolean = prefs.getBoolean(KEY_EXTRACTION_COMBINED, true)
+
     /** Template prompt ekstraksi kustom per jenis (Universal/Keuangan/Acara). Kosong = default. */
     fun saveExtractionPrompt(kind: ExtractionKind, template: String) =
         prefs.edit { putString(promptKey(kind), template) }
@@ -95,6 +100,7 @@ class PrefsManager(context: Context) {
     fun getVoiceTriggerPlaceholder(): String = prefs.getString(KEY_VOICE_TRIGGER_PLACEHOLDER, "") ?: ""
 
     companion object {
+        private const val KEY_EXTRACTION_COMBINED = "extraction_combined"
         private const val KEY_EVENT_ALARM_DEFAULT = "event_alarm_default"
         private const val KEY_ALARM_OFFSET_MIN = "alarm_offset_minutes"
         private const val KEY_DEFAULT_TEMPLATE = "default_template_id"

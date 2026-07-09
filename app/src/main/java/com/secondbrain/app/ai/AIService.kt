@@ -9,11 +9,13 @@ import kotlinx.coroutines.coroutineScope
 /** Satu kombinasi (provider × API key × model) yang akan dicoba berurutan. */
 data class AICombo(val provider: AIProviderType, val key: String, val model: String)
 
-/** Tiga template prompt ekstraksi (custom dari Settings, atau default). */
+/** Template prompt ekstraksi (custom dari Settings, atau default).
+ *  [combined] != null → mode SATU prompt gabungan (hemat token, default). */
 data class ExtractionPrompts(
     val universal: String,
     val finance: String,
-    val schedule: String
+    val schedule: String,
+    val combined: String? = null
 ) {
     companion object {
         fun from(prefs: PrefsManager): ExtractionPrompts = ExtractionPrompts(
@@ -22,7 +24,11 @@ data class ExtractionPrompts(
             finance = prefs.getExtractionPrompt(ExtractionKind.FINANCE)
                 .ifBlank { PromptTemplates.DEFAULT_FINANCE },
             schedule = prefs.getExtractionPrompt(ExtractionKind.SCHEDULE)
-                .ifBlank { PromptTemplates.DEFAULT_SCHEDULE }
+                .ifBlank { PromptTemplates.DEFAULT_SCHEDULE },
+            combined = if (prefs.isExtractionCombined())
+                prefs.getExtractionPrompt(ExtractionKind.COMBINED)
+                    .ifBlank { PromptTemplates.DEFAULT_COMBINED }
+            else null
         )
     }
 }
@@ -50,6 +56,22 @@ class AIService(
     ): Result<Metadata> = runCatching {
         val p = prompts ?: throw IllegalStateException("AIService ini dibuat untuk tanya-jawab, bukan ekstraksi")
 
+        // ---- Mode gabungan (default, hemat token): SATU panggilan, satu JSON berisi semua
+        // bagian. Respons yang sama diparse tiga kali (Gson mengabaikan field tak dikenal).
+        if (p.combined != null) {
+            DebugLog.log("AI ⛁ mode", "ekstraksi 1 prompt gabungan")
+            val raw = runFallback {
+                it.generateJson(
+                    PromptTemplates.fill(p.combined, now, rawText, groupNames),
+                    maxTokens = 4096
+                )
+            }.getOrThrow()
+            return@runCatching ExtractionParser.merge(
+                universalRaw = raw, financeRaw = raw, scheduleRaw = raw
+            )
+        }
+
+        // ---- Mode 3 prompt terpisah (paralel)
         // Hemat kuota: prompt Keuangan/Acara hanya jalan bila teksnya mengindikasikan
         // transaksi/jadwal (Universal selalu jalan).
         val needFinance = ExtractionHeuristics.mightContainFinance(rawText)

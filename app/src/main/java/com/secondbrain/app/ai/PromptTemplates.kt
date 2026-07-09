@@ -3,6 +3,7 @@ package com.secondbrain.app.ai
 /** Jenis prompt yang bisa di-override user lewat Settings. Tiga pertama = ekstraksi
  *  catatan (paralel); dua terakhir = fitur "Baca dengan AI". */
 enum class ExtractionKind(val label: String) {
+    COMBINED("Gabungan (1 prompt — hemat)"),
     UNIVERSAL("Universal"),
     FINANCE("Keuangan"),
     SCHEDULE("Acara / Pengingat"),
@@ -31,6 +32,88 @@ object PromptTemplates {
         )
         return "$day, ${now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}"
     }
+
+    /** Mode hemat (default): SATU prompt menghasilkan semua bagian sekaligus.
+     *  Field-nya gabungan Universal + Keuangan + Acara, jadi satu respons bisa
+     *  diparse oleh ketiga parser tanpa perubahan apa pun. */
+    val DEFAULT_COMBINED = """
+Ekstrak metadata LENGKAP dari catatan (Bahasa Indonesia) dalam SATU JSON. Kembalikan HANYA JSON tanpa teks lain.
+
+WAKTU SEKARANG: {now}
+(format: nama hari, tanggal, jam)
+
+Gunakan waktu sekarang untuk mengubah SEMUA waktu relatif menjadi tanggal & jam absolut yang presisi sampai menit:
+- besok = +1 hari; lusa = +2 hari; 10 menit lagi = +10 menit; setengah jam lagi = +30 menit; 2 jam lagi = +2 jam
+- "Jumat ini", "Senin depan", dll dihitung berdasarkan nama hari saat ini.
+Konversi waktu: subuh=05:00, pagi=08:00, siang=12:00, sore=15:00, malam=19:00, jam 1 siang=13:00, jam 7 malam=19:00.
+Gunakan format 24 jam (HH:mm).
+
+GRUP YANG SUDAH ADA: {groups}
+
+Catatan:
+"{note}"
+
+Struktur JSON:
+{
+  "title": "judul singkat (maks 8 kata)",
+  "type": "meeting|task|reminder|event|note|idea|personal",
+  "summary": "1-3 kalimat",
+  "keywords": ["kata penting"],
+  "suggestedGroups": ["nama grup"],
+  "locations": [{"type": "location|platform", "value": "tempat/aplikasi"}],
+  "entities": {"people": ["nama"], "organizations": ["organisasi"]},
+  "actions": [{"action": "aksi", "owner": "nama", "deadline": "YYYY-MM-DDTHH:mm|null"}],
+  "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
+  "status": "belum_mulai|berjalan|selesai",
+  "transactions": [
+    {"type": "expense|income", "item": "", "category": "", "quantity": 1, "unit": null,
+     "amount": 0, "currency": "IDR", "paymentMethod": null, "merchant": null,
+     "person": null, "date": "YYYY-MM-DD|null", "notes": null}
+  ],
+  "schedules": [
+    {"type": "meeting|task|event|reminder", "title": "judul kegiatan", "dates": ["YYYY-MM-DD"],
+     "startTime": "HH:mm|null", "endTime": "HH:mm|null", "location": "tempat|null",
+     "platform": "zoom/meet/dll|null", "participants": ["nama"],
+     "priority": "penting_urgen|penting_tidak_urgen|urgen_tidak_penting|tidak_penting_tidak_urgen",
+     "status": "belum_mulai|berjalan|selesai",
+     "alarmTimes": ["YYYY-MM-DDTHH:mm"], "useAlarm": false}
+  ]
+}
+
+Aturan umum:
+- title maksimal 8 kata; summary 1-3 kalimat.
+- keywords, locations, entities hanya berisi yang benar-benar muncul di catatan.
+- suggestedGroups: pilih dari GRUP YANG SUDAH ADA yang paling sesuai (boleh lebih dari satu);
+  boleh MAKSIMAL 1 nama grup BARU (2-4 kata) hanya jika catatan jelas bagian proyek/tema
+  berulang dan tak ada grup yang cocok; tidak relevan → [].
+- Jika people/owner tidak disebut, isi "saya".
+- actions berisi semua tindakan; deadline hingga menit; tanggal tanpa jam → tugas 08:00, deadline 23:59; tidak ada → null.
+- priority pakai matriks Eisenhower; status selesai hanya bila teks jelas menyatakannya.
+- Array yang tidak ada isinya → [].
+
+Aturan transactions:
+- Satu transaksi = satu object; pecah kalimat berisi beberapa pembelian.
+- quantity = jumlah barang; amount = TOTAL uang (angka murni). "5rb"=5000, "10k"=10000, "1,5jt"=1500000.
+- currency default "IDR".
+- category pilih dari: Belanja, Makanan, Minuman, Transportasi, Kesehatan, Pendidikan, Investasi,
+  Tabungan, Hiburan, Tagihan, Gaji, Bonus, Hadiah, Bayar Hutang, Piutang, Donasi, Pajak, Asuransi,
+  Perjalanan, Peralatan, Elektronik, Rumah Tangga, Lainnya.
+- Tidak ada aktivitas keuangan → "transactions": [].
+
+Aturan schedules:
+- Hanya kegiatan bertipe meeting, task, event, reminder; satu kegiatan = satu object.
+- Hari/tanggal tidak disebut → hari ini; dates wajib minimal satu tanggal.
+- Tanggal tanpa jam → startTime "08:00"; deadline → "23:59"; endTime hanya jika disebut.
+- Kegiatan berulang: JANGAN RRULE — isi dates dengan tanggal konkret maksimal 90 hari.
+- participants tidak disebut → ["saya"].
+- alarmTimes = semua waktu alarm/pengingat absolut:
+  - "ingatkan 10 menit sebelumnya" pada meeting 12:00 → ["YYYY-MM-DDT11:50"];
+  - permintaan pengingat berdiri sendiri ("ingatkan minum obat jam 20.00") → ["YYYY-MM-DDT20:00"];
+  - tidak ada permintaan → [].
+- useAlarm = true HANYA bila user eksplisit minta alarm keras/dibangunkan/jangan sampai terlewat;
+  "ingatkan saya" saja tetap false.
+- Tidak ada kegiatan → "schedules": [].
+""".trimIndent()
 
     val DEFAULT_UNIVERSAL = """
 Ekstrak metadata UMUM dari catatan (Bahasa Indonesia). Kembalikan HANYA JSON tanpa teks lain.
@@ -274,6 +357,7 @@ Isi file:
         template.replace("{jenis}", kind).replace(PLACEHOLDER_NOTE, content)
 
     fun defaultFor(kind: ExtractionKind): String = when (kind) {
+        ExtractionKind.COMBINED -> DEFAULT_COMBINED
         ExtractionKind.UNIVERSAL -> DEFAULT_UNIVERSAL
         ExtractionKind.FINANCE -> DEFAULT_FINANCE
         ExtractionKind.SCHEDULE -> DEFAULT_SCHEDULE
