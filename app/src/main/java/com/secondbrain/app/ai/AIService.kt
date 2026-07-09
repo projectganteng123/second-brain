@@ -56,22 +56,47 @@ class AIService(
     ): Result<Metadata> = runCatching {
         val p = prompts ?: throw IllegalStateException("AIService ini dibuat untuk tanya-jawab, bukan ekstraksi")
 
-        // ---- Mode gabungan (default, hemat token): SATU panggilan, satu JSON berisi semua
-        // bagian. Respons yang sama diparse tiga kali (Gson mengabaikan field tak dikenal).
+        // ---- Mode gabungan (default, hemat token): SATU panggilan pada MODEL TERKUAT tiap
+        // provider. Respons yang sama diparse tiga kali (Gson mengabaikan field tak dikenal).
+        // Bila seluruh key di tingkat model terkuat kena limit → otomatis PECAH menjadi
+        // 3 prompt terpisah di model-model ringan (prompt fokus lebih cocok untuk model kecil).
         if (p.combined != null) {
-            DebugLog.log("AI ⛁ mode", "ekstraksi 1 prompt gabungan")
-            val raw = runFallback {
+            DebugLog.log("AI ⛁ mode", "ekstraksi 1 prompt gabungan (model terkuat)")
+            val res = runFallback(strongestCombos()) {
                 it.generateJson(
                     PromptTemplates.fill(p.combined, now, rawText, groupNames),
                     maxTokens = 4096
                 )
-            }.getOrThrow()
-            return@runCatching ExtractionParser.merge(
-                universalRaw = raw, financeRaw = raw, scheduleRaw = raw
+            }
+            res.getOrNull()?.let { raw ->
+                return@runCatching ExtractionParser.merge(
+                    universalRaw = raw, financeRaw = raw, scheduleRaw = raw
+                )
+            }
+            DebugLog.log(
+                "AI ⛁ mode",
+                "model terkuat habis/gagal → pecah 3 prompt ke model ringan " +
+                    "(${res.exceptionOrNull()?.message?.take(120)})"
             )
+            return@runCatching extractSplit(p, rawText, now, groupNames,
+                lighterCombos().ifEmpty { combos })
         }
 
         // ---- Mode 3 prompt terpisah (paralel)
+        extractSplit(p, rawText, now, groupNames, combos)
+    }.onFailure {
+        // Pembatalan user bukan kegagalan — teruskan agar coroutine benar-benar berhenti.
+        if (it is kotlinx.coroutines.CancellationException) throw it
+    }
+
+    /** Ekstraksi 3 prompt terpisah (paralel) pada [comboList] yang diberikan. */
+    private suspend fun extractSplit(
+        p: ExtractionPrompts,
+        rawText: String,
+        now: String,
+        groupNames: List<String>,
+        comboList: List<AICombo>
+    ): Metadata {
         // Hemat kuota: prompt Keuangan/Acara hanya jalan bila teksnya mengindikasikan
         // transaksi/jadwal (Universal selalu jalan).
         val needFinance = ExtractionHeuristics.mightContainFinance(rawText)
@@ -86,13 +111,13 @@ class AIService(
             )
         }
 
-        coroutineScope {
+        return coroutineScope {
             // Tiap prompt MULAI dari API key berbeda (round-robin per key) supaya panggilan
             // paralel tidak menghantam limit per-menit key yang sama.
             var slot = 0
             fun launchPrompt(template: String) = slot++.let { offset ->
                 async {
-                    runFallback(rotatedCombos(offset)) {
+                    runFallback(rotatedCombos(offset, comboList)) {
                         it.generateJson(PromptTemplates.fill(template, now, rawText, groupNames))
                     }
                 }
@@ -113,9 +138,18 @@ class AIService(
                 scheduleRaw = sRes?.getOrThrow() ?: EMPTY_SCHEDULE
             )
         }
-    }.onFailure {
-        // Pembatalan user bukan kegagalan — teruskan agar coroutine benar-benar berhenti.
-        if (it is kotlinx.coroutines.CancellationException) throw it
+    }
+
+    /** Kombinasi hanya MODEL TERKUAT tiap provider (urutan combos sudah kuat→ringan per key). */
+    private fun strongestCombos(): List<AICombo> {
+        val strongest = combos.groupBy { it.provider }.mapValues { (_, l) -> l.first().model }
+        return combos.filter { it.model == strongest[it.provider] }
+    }
+
+    /** Sisa kombinasi model yang lebih ringan (untuk jalur pecah-3 saat model kuat habis). */
+    private fun lighterCombos(): List<AICombo> {
+        val strongest = combos.groupBy { it.provider }.mapValues { (_, l) -> l.first().model }
+        return combos.filter { it.model != strongest[it.provider] }
     }
 
     /**
@@ -123,9 +157,9 @@ class AIService(
      * Prompt ke-0 mulai dari key #1, ke-1 dari key #2, dst. — mis. Groq-1, Groq-2,
      * Cerebras-1. Fallback tetap menjalar ke seluruh kombinasi key×model lain.
      */
-    private fun rotatedCombos(offset: Int): List<AICombo> {
-        val units = combos.groupBy { it.provider to it.key }.values.toList()
-        if (units.size <= 1) return combos
+    private fun rotatedCombos(offset: Int, base: List<AICombo> = combos): List<AICombo> {
+        val units = base.groupBy { it.provider to it.key }.values.toList()
+        if (units.size <= 1) return base
         val k = offset % units.size
         return (units.drop(k) + units.take(k)).flatten()
     }
