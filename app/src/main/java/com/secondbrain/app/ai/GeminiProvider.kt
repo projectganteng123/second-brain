@@ -14,23 +14,33 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
 
     private val gson = GsonProvider.gson
 
-    override suspend fun generateJson(prompt: String): Result<String> =
+    companion object {
+        /** Anggaran token "berpikir" model 2.5 — akurasi lebih penting daripada kecepatan. */
+        private const val THINKING_BUDGET = 1024
+    }
+
+    override suspend fun generateJson(prompt: String, maxTokens: Int): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 DebugLog.log("AI → request", "model=${config.model}\n$prompt")
-                // Output JSON ekstraksi kecil — 2048 cukup, hemat jatah token-per-menit.
-                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = 2048)
+                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = maxTokens,
+                    thinkingBudget = THINKING_BUDGET)
                 DebugLog.log("AI ← response", responseText)
                 responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    override suspend fun generateJsonWithMedia(prompt: String, mimeType: String, dataBase64: String): Result<String> =
+    override suspend fun generateJsonWithMedia(
+        prompt: String,
+        mimeType: String,
+        dataBase64: String,
+        maxTokens: Int
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 DebugLog.log("AI → baca media", "model=${config.model} mime=$mimeType (${dataBase64.length / 1024} KB base64)")
-                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = 2048,
-                    mediaMime = mimeType, mediaData = dataBase64)
+                val responseText = callGemini(prompt, jsonOutput = true, maxTokens = maxTokens,
+                    mediaMime = mimeType, mediaData = dataBase64, thinkingBudget = THINKING_BUDGET)
                 DebugLog.log("AI ← media", responseText)
                 responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
@@ -41,7 +51,8 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
             runCatching {
                 val prompt = buildQAPrompt(question, contextNotes)
                 DebugLog.log("AI → tanya", prompt)
-                val ans = callGemini(prompt, jsonOutput = false, maxTokens = 8192)
+                val ans = callGemini(prompt, jsonOutput = false, maxTokens = 8192,
+                    thinkingBudget = THINKING_BUDGET)
                 DebugLog.log("AI ← jawab", ans)
                 ans
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
@@ -52,16 +63,18 @@ class GeminiProvider(private val config: AIConfig) : AIProvider {
         jsonOutput: Boolean,
         maxTokens: Int,
         mediaMime: String? = null,
-        mediaData: String? = null
+        mediaData: String? = null,
+        thinkingBudget: Int = 0
     ): String {
         val url = URL(
             "https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}"
         )
-        // thinkingBudget=0 mematikan "thinking" pada model 2.5 agar seluruh token output
-        // dipakai untuk jawaban (mencegah JSON terpotong). responseMimeType memaksa JSON murni.
+        // "Thinking" DINYALAKAN untuk akurasi (permintaan user: jangan menjawab terburu-buru).
+        // Token berpikir ikut dihitung maxOutputTokens, jadi jatahnya DITAMBAHKAN di atas
+        // maxTokens agar ruang jawaban tetap utuh dan JSON tidak terpotong.
         val genConfig = buildString {
-            append("\"temperature\": 0.1, \"maxOutputTokens\": $maxTokens")
-            append(", \"thinkingConfig\": {\"thinkingBudget\": 0}")
+            append("\"temperature\": 0.1, \"maxOutputTokens\": ${maxTokens + thinkingBudget}")
+            append(", \"thinkingConfig\": {\"thinkingBudget\": $thinkingBudget}")
             if (jsonOutput) append(", \"responseMimeType\": \"application/json\"")
         }
         val requestParts = buildString {

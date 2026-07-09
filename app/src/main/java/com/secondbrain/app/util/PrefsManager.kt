@@ -125,9 +125,9 @@ class PrefsManager(context: Context) {
             "gemini-flash-latest"
         )
 
-        /** Model bervision (baca gambar). PDF hanya didukung Gemini. */
+        /** Model bervision (baca gambar) — yang kuat dulu demi akurasi. PDF hanya Gemini. */
         val GROQ_VISION_MODELS = listOf("meta-llama/llama-4-scout-17b-16e-instruct")
-        val GEMINI_VISION_MODELS = listOf("gemini-2.5-flash-lite", "gemini-2.5-flash")
+        val GEMINI_VISION_MODELS = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite")
 
         fun modelLadder(provider: AIProviderType): List<String> = when (provider) {
             AIProviderType.GROQ -> GROQ_MODEL_LADDER
@@ -135,8 +135,9 @@ class PrefsManager(context: Context) {
             AIProviderType.GEMINI -> GEMINI_MODEL_LADDER
         }
 
-        /** Ekstraksi: mulai dari model ringan, naik bila limit. */
-        fun extractionModels(provider: AIProviderType): List<String> = modelLadder(provider)
+        /** Ekstraksi: mulai dari model TERKUAT demi akurasi (hasil fiktif dari model kecil
+         *  lebih mahal daripada kuota); turun ke model ringan bila kena limit. */
+        fun extractionModels(provider: AIProviderType): List<String> = modelLadder(provider).reversed()
 
         /** Menjawab: mulai dari model kuat, turun bila limit. */
         fun answerModels(provider: AIProviderType): List<String> = modelLadder(provider).reversed()

@@ -1,10 +1,13 @@
 package com.secondbrain.app.ai
 
-/** Jenis prompt ekstraksi — satu catatan diproses TIGA prompt paralel lalu hasilnya digabung. */
+/** Jenis prompt yang bisa di-override user lewat Settings. Tiga pertama = ekstraksi
+ *  catatan (paralel); dua terakhir = fitur "Baca dengan AI". */
 enum class ExtractionKind(val label: String) {
     UNIVERSAL("Universal"),
     FINANCE("Keuangan"),
-    SCHEDULE("Acara / Pengingat")
+    SCHEDULE("Acara / Pengingat"),
+    MEDIA_READ("Baca gambar/PDF"),
+    DOC_READ("Baca dokumen (Word/Excel/CSV)")
 }
 
 /**
@@ -221,43 +224,61 @@ Aturan:
 - Jika tidak ditemukan kegiatan → {"schedules":[]}.
 """.trimIndent()
 
-    /** Prompt membaca gambar/dokumen (struk, tulisan tangan, screenshot, PDF) jadi teks catatan. */
+    /** Prompt membaca gambar/PDF (struk, tulisan tangan, screenshot) — EKSTRAKSI LENGKAP. */
     val MEDIA_READ = """
-Baca isi gambar/dokumen terlampir (konteks Indonesia). Kembalikan HANYA JSON, tanpa teks lain:
-{"source": "jenis sumber", "text": "isi penting"}
+Baca gambar/dokumen terlampir dengan TELITI (konteks Indonesia). Tugas utamamu adalah
+EKSTRAKSI TEKS LENGKAP: salin SEMUA teks yang terbaca, tanpa meringkas dan tanpa
+mengurangi apa pun. Periksa ulang hasil bacaanmu sebelum menjawab.
+
+Kembalikan HANYA JSON, tanpa teks lain:
+{"source": "jenis sumber", "text": "seluruh teks hasil ekstraksi"}
 
 Aturan:
-- source: sebut jenisnya singkat, mis. "struk belanja", "catatan tulis tangan", "screenshot chat", "poster acara", "dokumen".
-- text: Bahasa Indonesia, padat, siap diproses sebagai catatan:
-  - Struk/nota: tulis tiap item beserta harganya (angka murni, mis. "Roti 18000"), jumlah bila ada, total, nama toko, dan tanggal struk.
-  - Catatan tulis tangan: salin isi teksnya (rapikan seperlunya, jangan ubah makna).
-  - Screenshot chat/pesan: rangkum percakapan + informasi penting (janji, waktu, tempat, nominal uang).
-  - Poster/undangan: nama acara, tanggal, jam, tempat.
-- Jangan mengarang; lewati bagian yang tidak terbaca.
+- source: sebut jenisnya singkat, mis. "struk belanja", "catatan tulis tangan",
+  "screenshot chat", "poster acara", "dokumen".
+- text: LENGKAP, pertahankan urutan asli:
+  - Struk/nota: SETIAP baris item dengan jumlah & harga persis angkanya, subtotal,
+    diskon, pajak, total, nama toko, tanggal & jam struk.
+  - Catatan tulis tangan: salin kata per kata.
+  - Screenshot chat/pesan: salin percakapan utuh, satu baris per pesan, sertakan nama
+    pengirim dan jam bila terlihat.
+  - Poster/undangan/dokumen: salin semua teks yang terlihat.
+- Boleh memperbaiki ejaan/typo yang JELAS salah baca; DILARANG meringkas, membuang
+  baris, atau menambah informasi yang tidak ada di gambar.
+- Angka, nominal uang, tanggal, dan jam WAJIB persis seperti sumber — jangan menebak.
+- Bagian yang benar-benar tidak terbaca tulis sebagai [tidak terbaca], jangan dikarang.
 """.trimIndent()
 
-    /** Prompt merangkum isi dokumen (Word/Excel/CSV/TXT) yang teksnya sudah diekstrak lokal. */
-    fun docReadPrompt(kind: String, content: String): String = """
-Berikut isi file $kind. Kembalikan HANYA JSON, tanpa teks lain:
-{"source": "jenis dokumen singkat", "text": "isi penting"}
+    /** Prompt membaca dokumen teks (Word/Excel/CSV/TXT). Placeholder: {jenis} & {note}. */
+    val DOC_READ = """
+Berikut isi file {jenis}. Tugasmu adalah mengembalikan teksnya secara LENGKAP dan rapi —
+tanpa meringkas dan tanpa membuang baris. Periksa ulang sebelum menjawab.
+
+Kembalikan HANYA JSON, tanpa teks lain:
+{"source": "jenis dokumen singkat", "text": "seluruh isi"}
 
 Aturan:
 - source: mis. "dokumen Word", "tabel Excel", "data CSV".
-- text: Bahasa Indonesia, padat, siap diproses sebagai catatan.
-- Pertahankan angka, nominal uang, tanggal, jam, dan nama persis seperti sumber.
-- Tabel: sebutkan tiap baris penting (mis. "Roti 18000"), plus total bila ada.
-- Jangan mengarang isi yang tidak ada.
+- text: seluruh isi apa adanya. Boleh merapikan format dan memperbaiki typo yang jelas,
+  tapi DILARANG meringkas, menghilangkan baris, atau menambah informasi yang tidak ada.
+- Semua angka, nominal uang, tanggal, jam, dan nama WAJIB persis seperti sumber.
+- Tabel: pertahankan tiap baris (mis. "Roti | 2 | 18000").
 
 Isi file:
 <<<
-$content
+{note}
 >>>
 """.trimIndent()
+
+    fun fillDocRead(template: String, kind: String, content: String): String =
+        template.replace("{jenis}", kind).replace(PLACEHOLDER_NOTE, content)
 
     fun defaultFor(kind: ExtractionKind): String = when (kind) {
         ExtractionKind.UNIVERSAL -> DEFAULT_UNIVERSAL
         ExtractionKind.FINANCE -> DEFAULT_FINANCE
         ExtractionKind.SCHEDULE -> DEFAULT_SCHEDULE
+        ExtractionKind.MEDIA_READ -> MEDIA_READ
+        ExtractionKind.DOC_READ -> DOC_READ
     }
 
     fun fill(template: String, now: String, note: String, groups: List<String> = emptyList()): String =

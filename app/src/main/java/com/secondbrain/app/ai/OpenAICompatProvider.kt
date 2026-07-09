@@ -28,19 +28,24 @@ class OpenAICompatProvider(
         AIProviderType.GEMINI -> throw IllegalArgumentException("Gemini memakai GeminiProvider")
     }
 
-    override suspend fun generateJson(prompt: String): Result<String> =
+    override suspend fun generateJson(prompt: String, maxTokens: Int): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 DebugLog.log("AI → request", "provider=$name model=$model\n$prompt")
                 // max_tokens ikut DIHITUNG limit token-per-menit (Groq: prompt + max_tokens
-                // vs TPM) — output JSON ekstraksi kecil, jadi 2048 cukup & aman dari 413.
-                val responseText = call(prompt, jsonOutput = true, maxTokens = 2048)
+                // vs TPM) — jaga tetap secukupnya sesuai kebutuhan pemanggil.
+                val responseText = call(prompt, jsonOutput = true, maxTokens = maxTokens)
                 DebugLog.log("AI ← response", responseText)
                 responseText
             }.onFailure { DebugLog.log("AI ✕ error", it.message ?: it.toString()) }
         }
 
-    override suspend fun generateJsonWithMedia(prompt: String, mimeType: String, dataBase64: String): Result<String> =
+    override suspend fun generateJsonWithMedia(
+        prompt: String,
+        mimeType: String,
+        dataBase64: String,
+        maxTokens: Int
+    ): Result<String> =
         withContext(Dispatchers.IO) {
             runCatching {
                 // Hanya Groq (Llama-4 Scout) yang punya vision; itu pun hanya gambar, bukan PDF.
@@ -49,7 +54,7 @@ class OpenAICompatProvider(
                 }
                 DebugLog.log("AI → baca media", "provider=$name model=$model mime=$mimeType (${dataBase64.length / 1024} KB base64)")
                 val responseText = call(
-                    prompt, jsonOutput = true, maxTokens = 2048,
+                    prompt, jsonOutput = true, maxTokens = maxTokens,
                     imageDataUrl = "data:$mimeType;base64,$dataBase64"
                 )
                 DebugLog.log("AI ← media", responseText)

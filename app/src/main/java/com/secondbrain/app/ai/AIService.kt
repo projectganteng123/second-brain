@@ -115,8 +115,13 @@ class AIService(
     data class MediaText(val source: String, val text: String)
 
     /** Baca gambar/PDF jadi teks catatan (dipakai fitur "Baca dengan AI" di layar Input).
-     *  Key yang berhasil dicatat agar TIDAK diprioritaskan pada ekstraksi berikutnya. */
-    suspend fun readMedia(mimeType: String, dataBase64: String): Result<MediaText> = runCatching {
+     *  [promptTemplate] dari Settings (bisa diedit user). Key yang berhasil dicatat agar
+     *  TIDAK diprioritaskan pada ekstraksi berikutnya. */
+    suspend fun readMedia(
+        mimeType: String,
+        dataBase64: String,
+        promptTemplate: String = PromptTemplates.MEDIA_READ
+    ): Result<MediaText> = runCatching {
         if (combos.isEmpty()) {
             throw RuntimeException(
                 "Membaca gambar/PDF butuh API key Gemini (gambar & PDF) atau Groq (gambar saja). " +
@@ -125,7 +130,8 @@ class AIService(
         }
         // Beberapa file dibaca bersamaan → tiap pembacaan mulai dari key berbeda (round-robin)
         val raw = runFallback(rotatedCombos(READ_SLOT.getAndIncrement()), onComboSuccess = { noteVisionKeyUsed(it.key) }) {
-            it.generateJsonWithMedia(PromptTemplates.MEDIA_READ, mimeType, dataBase64)
+            // Ekstraksi lengkap butuh ruang output lebih besar dari JSON metadata biasa
+            it.generateJsonWithMedia(promptTemplate, mimeType, dataBase64, maxTokens = 4096)
         }.getOrThrow()
         val (source, text) = ExtractionParser.parseMedia(raw)
         if (text.isBlank()) throw RuntimeException("AI tidak menemukan teks yang bisa dibaca pada file ini.")
@@ -133,13 +139,17 @@ class AIService(
     }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
 
     /** Baca isi dokumen (Word/Excel/CSV/TXT — teks sudah diekstrak lokal) jadi teks catatan.
-     *  Tidak butuh vision, jadi semua provider bisa. Key yang dipakai ikut dicatat. */
-    suspend fun readDocument(kind: String, content: String): Result<MediaText> = runCatching {
+     *  Tidak butuh vision, jadi semua provider bisa. [promptTemplate] dari Settings. */
+    suspend fun readDocument(
+        kind: String,
+        content: String,
+        promptTemplate: String = PromptTemplates.DOC_READ
+    ): Result<MediaText> = runCatching {
         if (combos.isEmpty()) {
             throw RuntimeException("API key belum diatur atau tidak ada provider yang dicentang. Buka Pengaturan terlebih dahulu.")
         }
         val raw = runFallback(rotatedCombos(READ_SLOT.getAndIncrement()), onComboSuccess = { noteVisionKeyUsed(it.key) }) {
-            it.generateJson(PromptTemplates.docReadPrompt(kind, content))
+            it.generateJson(PromptTemplates.fillDocRead(promptTemplate, kind, content), maxTokens = 4096)
         }.getOrThrow()
         val (source, text) = ExtractionParser.parseMedia(raw, fallbackSource = kind)
         if (text.isBlank()) throw RuntimeException("AI tidak menemukan isi yang bisa dibaca pada file ini.")
@@ -244,8 +254,12 @@ class AIService(
                 prefs.getApiKeys(p).flatMap { k -> models.map { m -> AICombo(p, k, m) } }
             }
 
-        private fun buildVisionCombos(prefs: PrefsManager, forPdf: Boolean): List<AICombo> =
-            prefs.activeProviders().flatMap { p ->
+        private fun buildVisionCombos(prefs: PrefsManager, forPdf: Boolean): List<AICombo> {
+            // Untuk vision, GEMINI DIDAHULUKAN (akurasi baca gambar jauh lebih baik daripada
+            // Llama-4 Scout); Groq hanya cadangan untuk gambar.
+            val active = prefs.activeProviders()
+            val order = listOf(AIProviderType.GEMINI, AIProviderType.GROQ).filter { it in active }
+            return order.flatMap { p ->
                 val models = when {
                     p == AIProviderType.GEMINI -> PrefsManager.GEMINI_VISION_MODELS
                     p == AIProviderType.GROQ && !forPdf -> PrefsManager.GROQ_VISION_MODELS
@@ -253,5 +267,6 @@ class AIService(
                 }
                 prefs.getApiKeys(p).flatMap { k -> models.map { m -> AICombo(p, k, m) } }
             }
+        }
     }
 }

@@ -595,6 +595,8 @@ fun SettingsScreen(
                 PromptEditor(ExtractionKind.UNIVERSAL, prefs, isDark)
                 PromptEditor(ExtractionKind.FINANCE, prefs, isDark)
                 PromptEditor(ExtractionKind.SCHEDULE, prefs, isDark)
+                PromptEditor(ExtractionKind.MEDIA_READ, prefs, isDark)
+                PromptEditor(ExtractionKind.DOC_READ, prefs, isDark)
             }
 
             Spacer(Modifier.height(12.dp))
@@ -775,9 +777,13 @@ private fun PromptEditor(kind: ExtractionKind, prefs: PrefsManager, isDark: Bool
                 text = if (saved) "Tersimpan" else "Simpan",
                 icon = if (saved) Icons.Outlined.CheckCircle else Icons.Outlined.Save,
                 onClick = {
+                    // MEDIA_READ tak butuh placeholder (gambar dikirim terpisah);
+                    // DOC_READ butuh {note} (isi file); prompt ekstraksi butuh {note} semua.
+                    val needsNote = kind != ExtractionKind.MEDIA_READ
                     when {
-                        !text.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
-                            error = "Prompt harus memuat placeholder {note} (teks catatan)."
+                        needsNote && !text.contains(PromptTemplates.PLACEHOLDER_NOTE) ->
+                            error = "Prompt harus memuat placeholder {note}" +
+                                (if (kind == ExtractionKind.DOC_READ) " (isi file)." else " (teks catatan).")
                         kind == ExtractionKind.SCHEDULE && !text.contains(PromptTemplates.PLACEHOLDER_NOW) ->
                             error = "Prompt Acara harus memuat placeholder {now} (waktu sekarang)."
                         else -> {

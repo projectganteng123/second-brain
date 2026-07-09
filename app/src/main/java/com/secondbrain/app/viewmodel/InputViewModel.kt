@@ -107,9 +107,17 @@ class InputViewModel(
                 val result = when (prepared) {
                     is MediaReader.Prepared.Media ->
                         AIService.forVision(prefs, forPdf = prepared.mimeType == "application/pdf")
-                            .readMedia(prepared.mimeType, prepared.base64)
+                            .readMedia(
+                                prepared.mimeType, prepared.base64,
+                                promptTemplate = prefs.getExtractionPrompt(com.secondbrain.app.ai.ExtractionKind.MEDIA_READ)
+                                    .ifBlank { com.secondbrain.app.ai.PromptTemplates.MEDIA_READ }
+                            )
                     is MediaReader.Prepared.Text ->
-                        AIService.forReading(prefs).readDocument(prepared.kind, prepared.text)
+                        AIService.forReading(prefs).readDocument(
+                            prepared.kind, prepared.text,
+                            promptTemplate = prefs.getExtractionPrompt(com.secondbrain.app.ai.ExtractionKind.DOC_READ)
+                                .ifBlank { com.secondbrain.app.ai.PromptTemplates.DOC_READ }
+                        )
                 }
                 result.onSuccess { m ->
                     _pendingInserts.update { it + "Dari ${m.source}: ${m.text}" }

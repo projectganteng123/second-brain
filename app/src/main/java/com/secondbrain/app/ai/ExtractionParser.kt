@@ -156,7 +156,7 @@ object ExtractionParser {
 
     private data class MediaDto(val source: String? = null, val text: String? = null)
 
-    /** Parse output prompt MEDIA_READ / docReadPrompt → (jenis sumber, teks isi). */
+    /** Parse output prompt MEDIA_READ / DOC_READ → (jenis sumber, teks isi). */
     fun parseMedia(raw: String, fallbackSource: String = "gambar"): Pair<String, String> {
         val dto = parseAs(raw, MediaDto::class.java, "Baca file")
         return (dto.source.orEmpty().ifBlank { fallbackSource }) to dto.text.orEmpty().trim()
