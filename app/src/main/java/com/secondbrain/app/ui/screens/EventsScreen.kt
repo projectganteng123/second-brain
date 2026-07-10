@@ -72,7 +72,8 @@ private enum class KanbanSort(val label: String) { DATE("Tanggal terdekat"), PRI
 fun EventsScreen(
     repo: NoteRepository,
     onBack: () -> Unit,
-    onNoteClick: (Long) -> Unit
+    onNoteClick: (Long) -> Unit,
+    onOpenAlarms: () -> Unit = {}
 ) {
     val isDark = isSystemDark()
     val scope = rememberCoroutineScope()
@@ -172,11 +173,18 @@ fun EventsScreen(
                     Text("Acara", style = MaterialTheme.typography.titleMedium,
                         color = if (isDark) Lavender50 else Lavender800)
                 }
-                TimeRangeSelector(
-                    range,
-                    { range = it; persistTimeRange(prefs, "events", it) },
-                    isDark
-                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    IconButton(onClick = onOpenAlarms, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Outlined.Alarm, "Alarm & pengingat aktif",
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isDark) Lavender400 else Lavender600)
+                    }
+                    TimeRangeSelector(
+                        range,
+                        { range = it; persistTimeRange(prefs, "events", it) },
+                        isDark
+                    )
+                }
             }
 
             Spacer(Modifier.height(8.dp))

@@ -27,6 +27,7 @@ sealed class Screen(val route: String) {
     object Gantt     : Screen("gantt")
     object Events    : Screen("events")
     object Finance   : Screen("finance")
+    object Alarms    : Screen("alarms")
     object Groups    : Screen("groups")
     object GroupNotes : Screen("group/{groupId}") {
         fun go(groupId: Long) = "group/$groupId"
@@ -41,12 +42,18 @@ fun NavGraph(
     navController: NavHostController,
     repo: NoteRepository,
     prefs: PrefsManager,
-    openInput: Boolean = false
+    openInput: Boolean = false,
+    openNoteId: Long = -1L
 ) {
     val gson = remember { GsonProvider.gson }
     // Shared across Input -> Preview so rawText & manual fields survive navigation
     val inputVm = remember { InputViewModel(repo, prefs) }
     // Widget quick-capture tidak perlu navigasi khusus: halaman awal SUDAH layar Input.
+
+    // Dibuka dari ketukan notifikasi alarm → langsung ke catatan sumbernya
+    LaunchedEffect(openNoteId) {
+        if (openNoteId > 0) navController.navigate(Screen.Detail.go(openNoteId))
+    }
 
     NavHost(navController, startDestination = Screen.Home.route) {
 
@@ -86,12 +93,21 @@ fun NavGraph(
             EventsScreen(
                 repo = repo,
                 onBack = { navController.popBackStack() },
-                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) },
+                onOpenAlarms = { navController.navigate(Screen.Alarms.route) }
             )
         }
 
         composable(Screen.Finance.route) {
             FinanceScreen(
+                repo = repo,
+                onBack = { navController.popBackStack() },
+                onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
+            )
+        }
+
+        composable(Screen.Alarms.route) {
+            AlarmsScreen(
                 repo = repo,
                 onBack = { navController.popBackStack() },
                 onNoteClick = { id -> navController.navigate(Screen.Detail.go(id)) }
@@ -150,7 +166,8 @@ fun NavGraph(
                 onBack = { navController.popBackStack() },
                 onOpenDebug = { navController.navigate(Screen.Debug.route) },
                 onOpenArchive = { navController.navigate(Screen.Archive.route) },
-                onOpenActionItems = { navController.navigate(Screen.ActionItems.route) }
+                onOpenActionItems = { navController.navigate(Screen.ActionItems.route) },
+                onOpenAlarms = { navController.navigate(Screen.Alarms.route) }
             )
         }
 

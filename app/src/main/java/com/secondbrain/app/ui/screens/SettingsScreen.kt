@@ -42,7 +42,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenDebug: () -> Unit = {},
     onOpenArchive: () -> Unit = {},
-    onOpenActionItems: () -> Unit = {}
+    onOpenActionItems: () -> Unit = {},
+    onOpenAlarms: () -> Unit = {}
 ) {
     val isDark = isSystemDark()
     val context = LocalContext.current
@@ -559,6 +560,7 @@ fun SettingsScreen(
             // ----- Navigasi -----
             GlassCard {
                 SectionLabel("lainnya", modifier = Modifier.padding(bottom = 8.dp))
+                NavRow(Icons.Outlined.Alarm, "Alarm & pengingat aktif", isDark, onOpenAlarms)
                 NavRow(Icons.Outlined.Checklist, "Semua action items", isDark, onOpenActionItems)
                 NavRow(Icons.Outlined.Archive, "Arsip", isDark, onOpenArchive)
             }

@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
         val app = application as SecondBrainApp
         val prefs = PrefsManager(this)
         val openInput = intent?.getBooleanExtra(EXTRA_OPEN_INPUT, false) == true
+        val openNoteId = intent?.getLongExtra(EXTRA_OPEN_NOTE, -1L) ?: -1L
 
         // Saat app dibuka, di latar & bertahap: cabut alarm basi (catatan yang sudah
         // dihapus/diarsip/diproses ulang), lalu proses catatan offline yang tertunda.
@@ -49,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val navController = rememberNavController()
-                    NavGraph(navController, app.repository, prefs, openInput)
+                    NavGraph(navController, app.repository, prefs, openInput, openNoteId)
                 }
             }
         }
@@ -67,5 +68,6 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_INPUT = "open_input"
+        const val EXTRA_OPEN_NOTE = "open_note"
     }
 }

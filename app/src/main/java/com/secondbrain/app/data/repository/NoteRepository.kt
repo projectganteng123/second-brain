@@ -171,6 +171,28 @@ class NoteRepository(
         generateReminders(id, meta, alarmOffsetMinutes, useAlarm)
     }
 
+    // ---- Halaman Alarm: lihat / edit / hapus pengingat yang akan datang ----
+
+    fun upcomingReminders(): Flow<List<ReminderEntity>> =
+        reminderDao.getUpcomingFlow(System.currentTimeMillis())
+
+    /** Ubah satu pengingat: cabut pendaftaran lama, simpan, lalu daftarkan ulang. */
+    suspend fun updateReminder(reminder: ReminderEntity) {
+        appContext?.let { com.secondbrain.app.notification.AlarmJanitor.cancelIds(it, listOf(reminder.id)) }
+        reminderDao.update(reminder.copy(isSent = false))
+        appContext?.let {
+            runCatching { com.secondbrain.app.notification.ReminderScheduler.scheduleUpcoming(it) }
+        }
+        DebugLog.log("DB ✎ reminder", "id=${reminder.id} → ${reminder.message} @${reminder.remindAt} alarm=${reminder.isAlarm}")
+    }
+
+    /** Hapus satu pengingat + cabut pendaftarannya seketika. */
+    suspend fun deleteReminder(id: Long) {
+        appContext?.let { com.secondbrain.app.notification.AlarmJanitor.cancelIds(it, listOf(id)) }
+        reminderDao.deleteById(id)
+        DebugLog.log("DB ✗ reminder", "id=$id dihapus dari halaman Alarm")
+    }
+
     suspend fun update(note: NoteEntity) = noteDao.update(note)
 
     suspend fun delete(note: NoteEntity) {

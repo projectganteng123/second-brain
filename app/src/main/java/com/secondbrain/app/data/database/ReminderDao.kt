@@ -27,6 +27,16 @@ interface ReminderDao {
     @Query("SELECT id FROM reminders WHERE isSent = 0")
     suspend fun getAliveIds(): List<Long>
 
+    /** Semua pengingat yang belum terkirim & belum lewat — untuk halaman Alarm (live). */
+    @Query("SELECT * FROM reminders WHERE isSent = 0 AND remindAt >= :from ORDER BY remindAt ASC")
+    fun getUpcomingFlow(from: Long): Flow<List<ReminderEntity>>
+
+    @Update
+    suspend fun update(reminder: ReminderEntity)
+
+    @Query("DELETE FROM reminders WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query("SELECT id FROM reminders WHERE noteId = :noteId")
     suspend fun getIdsByNote(noteId: Long): List<Long>
 
